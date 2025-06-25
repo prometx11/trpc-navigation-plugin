@@ -1,6 +1,6 @@
 {
   "name": "trpc-navigation-plugin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "TypeScript Language Service Plugin for fast TRPC navigation, bypassing slow type evaluation",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
