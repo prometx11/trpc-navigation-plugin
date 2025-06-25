@@ -1,35 +1,5 @@
-The MIT License (MIT)
+# tRPC Navigation Plugin
 
-Copyright (c) [Year] [Your Name or Organization]
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
----
-
-/*
- * ----------------------------------------------------------------------------
- * "THE BEER-WARE LICENSE" (Revision 42):
- * <phk@FreeBSD.ORG> wrote this file. As long as you retain this notice you
- * can do whatever you want with this stuff. If we meet some day, and you think
- * this stuff is worth it, you can buy me a beer in return. Poul-Henning Kamp
- * ----------------------------------------------------------------------------
- */
 A TypeScript Language Service Plugin that provides instant "go to definition" navigation for TRPC procedures, bypassing slow type evaluation in large codebases.
 
 ## Problem
@@ -64,7 +34,9 @@ This plugin uses ts-morph to analyze the TRPC router structure and build a direc
    ```json
    {
      "compilerOptions": {
-       "name": "trpc-navigation-plugin"
+       "plugins": [
+         {
+           "name": "trpc-navigation-plugin"
          }
        ]
      }
@@ -82,7 +54,9 @@ All configuration is done in your `tsconfig.json`:
 {
   "compilerOptions": {
     "plugins": [
-    "routerRoot": "./src/router",           // Optional: Where your TRPC routers are (auto-detected if not specified)
+      {
+        "name": "trpc-navigation-plugin",
+        "routerRoot": "./src/router",           // Optional: Where your TRPC routers are (auto-detected if not specified)
         "mainRouterName": "appRouter",          // Optional: Name of main router (default: "appRouter")
         "apiVariableName": "api",               // Optional: TRPC client variable (default: "api")
         "procedurePattern": "procedure_",       // Optional: Pattern for procedures (auto-detected if not specified)
@@ -97,8 +71,8 @@ All configuration is done in your `tsconfig.json`:
 ## How It Works
 
 1. **Scanning**: On first use, the plugin scans your configured router directory
-- **Auto-detection mode** (default): Automatically detects both routers and procedures by their structure
-   - **Pattern mode**: When `procedurePattern` is set, uses pattern matching for procedures
+2. **Auto-detection mode** (default): Automatically detects both routers and procedures by their structure
+3. **Pattern mode**: When `procedurePattern` is set, uses pattern matching for procedures
 4. **Interception**: When you Cmd+Click on an API call, it returns the exact source location
 5. **Smart Navigation**: Click on different parts for different results:
    - `api.billing.claims` - clicking "billing" goes to billing router
@@ -112,13 +86,16 @@ export const userRouter = router({...})     // ✓ Works
 export const users = router({...})          // ✓ Works
 export const userManagement = router({...}) // ✓ Works
 export const foo = router({...})            // ✓ Works
-  **Procedures** - Automatically detected when no pattern is configured:
+```
+
+**Procedures** - Automatically detected when no pattern is configured:
 ```typescript
 export const getUser = protectedProcedure.query(...)      // ✓ Works
 export const updateUser = staffProcedure.mutation(...)    // ✓ Works
 export const subscribeToUpdates = publicProcedure         // ✓ Works
   .input(z.object({...}))
   .subscription(...)
+```
 ```
 
 ### Smart Package Detection
