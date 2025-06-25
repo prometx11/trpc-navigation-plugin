@@ -1,7 +1,7 @@
 {
   "name": "trpc-navigation-plugin",
   "version": "0.1.1",
-  "description": "TypeScript Language Service Plugin for fast TRPC navigation, bypassing slow type evaluation",
+  "description": "TypeScript Language Service Plugin that fixes broken 'go to definition' for tRPC when using declaration emit",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "typescriptServerPlugin": true,

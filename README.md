@@ -1,23 +1,36 @@
 # tRPC Navigation Plugin
 
-A TypeScript Language Service Plugin that provides instant "go to definition" navigation for TRPC procedures, bypassing slow type evaluation in large codebases.
+A TypeScript Language Service Plugin that fixes broken "go to definition" navigation for tRPC procedures when using TypeScript's declaration emit.
 
 ## Problem
 
-When using TRPC with TypeScript's declaration emit, the generated type files become massive (1.1MB+) with deeply nested types. This causes TypeScript's "go to definition" feature to be extremely slow (2-10+ seconds) or fail entirely when clicking on API calls like `api.appointments.unsignedAppointments.useQuery()`.
+When using tRPC with TypeScript's declaration emit (`declaration: true`), there's a TypeScript bug that completely breaks "go to definition" functionality. When you try to Cmd+Click on a tRPC procedure call like `api.users.getUser.useQuery()`, TypeScript only takes you to the root router definition - it can't navigate any deeper into nested routers or the actual procedure implementations.
+
+This is caused by how TypeScript handles the complex type inference in tRPC's router chains when generating `.d.ts` files.
 
 ## Solution
 
-This plugin uses ts-morph to analyze the TRPC router structure and build a direct mapping from API paths to source files. When you Cmd+Click on a TRPC procedure, the plugin intercepts the navigation request and returns the source file location directly, bypassing TypeScript's slow type evaluation.
+This plugin bypasses TypeScript's broken type-based navigation by directly analyzing your tRPC router structure using the TypeScript AST. When you Cmd+Click on a tRPC procedure, the plugin intercepts the navigation request and takes you directly to the procedure implementation in your source code.
 
 ## Features
 
-- **Instant Navigation**: Go directly to TRPC procedure implementations without type evaluation delays
-- **Auto-Discovery**: Automatically scans and maps all TRPC procedures in the codebase
-- **Smart Caching**: Caches the navigation map for 30 seconds to balance performance and freshness
-- **Hover Hints**: Shows helpful hints when hovering over TRPC API calls
-- **Zero Overhead**: Automatically disables itself in packages that don't use TRPC
-- **Lazy Loading**: Only initializes when you actually click on a TRPC API call
+- **Fixes Broken Navigation**: Restores "go to definition" functionality that TypeScript's declaration emit breaks
+- **Direct Source Navigation**: Takes you to the actual implementation code, not type definitions
+- **Auto-Discovery**: Automatically finds and maps all tRPC routers and procedures
+- **Smart Caching**: Caches the navigation map to ensure fast performance
+- **Zero Configuration**: Works out of the box for most tRPC projects
+- **Minimal Overhead**: Only activates in projects using tRPC, with lazy initialization
+
+## When You Need This Plugin
+
+You need this plugin if:
+- Your project uses tRPC
+- You have `declaration: true` in your tsconfig.json (for generating .d.ts files)
+- "Go to definition" on tRPC procedures doesn't work or takes you to the wrong place
+
+You DON'T need this plugin if:
+- You're not using TypeScript's declaration emit
+- Your "go to definition" already works correctly
 
 ## Installation
 
@@ -119,7 +132,7 @@ If navigation isn't working:
 
 ## Technical Details
 
-- Uses ts-morph for AST traversal (no regex pattern matching)
-- Handles nested routers and complex router structures
-- Works with the existing TypeScript declaration emit setup
-- Does not require any changes to the build process
+- Uses ts-morph for AST traversal to find procedure implementations
+- Works around TypeScript's navigation bug without modifying your build process
+- Compatible with tRPC v10+ and v11 that use the standard router pattern
+- Does not interfere with TypeScript's type checking or declaration emit
