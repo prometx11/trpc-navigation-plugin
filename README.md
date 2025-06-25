@@ -48,7 +48,7 @@ This plugin uses ts-morph to analyze the TRPC router structure and build a direc
 
 ## Configuration
 
-All configuration is done in your `tsconfig.json`:
+The plugin works out of the box with zero configuration for most projects. All configuration options are optional:
 
 ```json
 {
@@ -56,25 +56,25 @@ All configuration is done in your `tsconfig.json`:
     "plugins": [
       {
         "name": "trpc-navigation-plugin",
-        "routerRoot": "./src/router",           // Optional: Where your TRPC routers are (auto-detected if not specified)
-        "mainRouterName": "appRouter",          // Optional: Name of main router (default: "appRouter")
-        "apiVariableName": "api",               // Optional: TRPC client variable (default: "api")
-        "procedurePattern": "procedure_",       // Optional: Pattern for procedures (auto-detected if not specified)
-        "cacheTimeout": 30000,                  // Optional: Cache duration in ms (default: 30000)
-        "maxDepth": 10                          // Optional: Max router depth (default: 10)
+        "routerRoot": "./src/router",           // Optional: Where your TRPC routers are located
+        "mainRouterName": "appRouter",          // Optional: Name of your main router export (default: "appRouter")
+        "apiVariableName": "api",               // Optional: Variable name used for TRPC client (default: "api")
+        "cacheTimeout": 30000                   // Optional: Cache duration in ms (default: 30000)
       }
     ]
   }
 }
 ```
 
+**Note**: The plugin automatically detects router locations if `routerRoot` is not specified, checking common paths like `./src/router`, `./src/routers`, `./src/server/router`, etc.
+
 ## How It Works
 
-1. **Scanning**: On first use, the plugin scans your configured router directory
-2. **Auto-detection mode** (default): Automatically detects both routers and procedures by their structure
-3. **Pattern mode**: When `procedurePattern` is set, uses pattern matching for procedures
-4. **Interception**: When you Cmd+Click on an API call, it returns the exact source location
-5. **Smart Navigation**: Click on different parts for different results:
+1. **Lazy Initialization**: The plugin only activates when you first click on a TRPC API call
+2. **Auto-Detection**: Automatically finds and scans your router directory (or uses `routerRoot` if configured)
+3. **AST Analysis**: Uses ts-morph to analyze your TypeScript files and build a mapping of API paths to source locations
+4. **Smart Navigation**: When you Cmd+Click on an API call, it intercepts the request and returns the exact source location
+5. **Contextual Navigation**: Click on different parts for different results:
    - `api.billing.claims` - clicking "billing" goes to billing router
    - `api.billing.claims` - clicking "claims" goes to claims procedure/router
 
@@ -112,10 +112,10 @@ If none are found, the plugin disables itself with zero overhead. This means you
 If navigation isn't working:
 
 1. Check the TS Server logs for `[TRPC-Nav]` entries
-2. Verify your `routerRoot` path is correct and the directory exists
-3. If using `procedurePattern`, ensure your procedures match the pattern
+2. If using `routerRoot`, verify the path is correct and the directory exists
+3. Ensure your main router is exported with the expected name (default: `appRouter`)
 4. Make sure routers are properly exported and connected to your main router
-5. Try restarting the TS Server
+5. Try restarting the TS Server after making configuration changes
 
 ## Technical Details
 
