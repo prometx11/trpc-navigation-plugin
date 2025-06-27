@@ -177,7 +177,7 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
       let apiPath = apiMatch[1] || '';
 
       // Look forward to complete the path
-      const forwardMatch = afterCursor.match(/^([\w.]*?)(?:\s*\.\s*(?:useQuery|useMutation|useSubscription|use)|\s|$)/);
+      const forwardMatch = afterCursor.match(/^([\w.]*?)(?:\s*\.\s*(?:useQuery|useMutation|useSubscription|use|queryOptions|mutationOptions)|\s|$)/);
       if (forwardMatch?.[1]) {
         apiPath += forwardMatch[1];
       }
