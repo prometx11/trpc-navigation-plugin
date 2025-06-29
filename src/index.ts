@@ -131,6 +131,51 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
     proxy[k] = (...args: any[]) => x.apply(info.languageService, args);
   }
 
+  // Helper function to find useUtils() variable assignments
+  function findUseUtilsVariables(sourceFile: ts.SourceFile): Set<string> {
+    const utilsVariables = new Set<string>();
+    logger.debug(`Scanning for useUtils variables in ${sourceFile.fileName}`);
+    
+    function visit(node: ts.Node) {
+      if (ts.isVariableStatement(node)) {
+        node.declarationList.declarations.forEach(decl => {
+          if (ts.isIdentifier(decl.name) && decl.initializer) {
+            // Check for pattern: const varName = api.useUtils()
+            if (ts.isCallExpression(decl.initializer)) {
+              const expr = decl.initializer.expression;
+              if (ts.isPropertyAccessExpression(expr) && 
+                  ts.isIdentifier(expr.expression) &&
+                  expr.expression.text === pluginConfig.apiVariableName &&
+                  expr.name.text === 'useUtils') {
+                utilsVariables.add(decl.name.text);
+                logger.info(`Found useUtils variable: ${decl.name.text}`);
+              }
+            }
+          } else if (ts.isObjectBindingPattern(decl.name) && decl.initializer) {
+            // Check for destructuring: const { mutate, ... } = api.useUtils()
+            if (ts.isCallExpression(decl.initializer)) {
+              const expr = decl.initializer.expression;
+              if (ts.isPropertyAccessExpression(expr) && 
+                  ts.isIdentifier(expr.expression) &&
+                  expr.expression.text === pluginConfig.apiVariableName &&
+                  expr.name.text === 'useUtils') {
+                // For destructuring, we'll still track the entire pattern
+                // In practice, users would need to use the destructured properties differently
+                logger.debug(`Found destructured useUtils assignment`);
+              }
+            }
+          }
+        });
+      }
+      
+      ts.forEachChild(node, visit);
+    }
+    
+    visit(sourceFile);
+    logger.info(`Total useUtils variables found: ${utilsVariables.size} - [${Array.from(utilsVariables).join(', ')}]`);
+    return utilsVariables;
+  }
+
   // Override getDefinitionAndBoundSpan for navigation
   proxy.getDefinitionAndBoundSpan = (fileName: string, position: number): ts.DefinitionInfoAndBoundSpan | undefined => {
     try {
@@ -157,6 +202,9 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
 
       const text = sourceFile.text;
 
+      // Find all useUtils variables in the file
+      const utilsVariables = findUseUtilsVariables(sourceFile);
+
       // Find the line containing the position
       const lineStart = text.lastIndexOf('\n', position) + 1;
       const lineEnd = text.indexOf('\n', position);
@@ -166,18 +214,24 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
       const beforeCursor = line.substring(0, position - lineStart);
       const afterCursor = line.substring(position - lineStart);
 
-      // Check if we're in an api.* expression
-      const apiPattern = new RegExp(`${pluginConfig.apiVariableName}\\s*\\.\\s*([\\w.]*\\w)?$`);
+      // Build pattern to match both api.* and utilsVariable.* expressions
+      const variableNames = [pluginConfig.apiVariableName, ...utilsVariables];
+      logger.debug(`Variable names to match: [${variableNames.join(', ')}]`);
+      const apiPattern = new RegExp(`(${variableNames.join('|')})\\s*\\.\\s*([\\w.]*\\w)?$`);
+      logger.debug(`Pattern: ${apiPattern.source}`);
+      logger.debug(`Testing against: "${beforeCursor}"`);
       const apiMatch = beforeCursor.match(apiPattern);
       if (!apiMatch) {
         logger.debug(`No API match found in line: ${line}`);
         return info.languageService.getDefinitionAndBoundSpan(fileName, position);
       }
 
-      let apiPath = apiMatch[1] || '';
+      const matchedVariable = apiMatch[1];
+      let apiPath = apiMatch[2] || '';
 
       // Look forward to complete the path
-      const forwardMatch = afterCursor.match(/^([\w.]*?)(?:\s*\.\s*(?:useQuery|useMutation|useSubscription|use)|\s|$)/);
+      // For useUtils, we also need to match methods like .fetch(), .mutate(), .invalidate()
+      const forwardMatch = afterCursor.match(/^([\w.]*?)(?:\s*\.\s*(?:useQuery|useMutation|useSubscription|use|fetch|mutate|invalidate|refetch|cancel|setData|getData)|\s|$)/);
       if (forwardMatch?.[1]) {
         apiPath += forwardMatch[1];
       }
@@ -190,9 +244,10 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
         return info.languageService.getDefinitionAndBoundSpan(fileName, position);
       }
 
+      // Always normalize to use the configured API variable name for mapping lookup
       apiPath = `${pluginConfig.apiVariableName}.${apiPath}`;
 
-      logger.debug(`Detected TRPC API call: ${apiPath}`);
+      logger.debug(`Detected TRPC API call: ${apiPath} (via ${matchedVariable})`);
 
       // Ensure initialization before proceeding
       if (!ensureInitialized()) {
@@ -235,14 +290,27 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
       const clickedWord = text.substring(wordStart, wordEnd);
 
       // Now figure out which segment of the API path this word represents
-      // For api.appointments.unsignedAppointments, clicking "appointments" should navigate to api.appointments
+      // We need to consider the full path including the variable name for proper matching
+      // For apictx.agencies.patientAgencyConnections, clicking "agencies" should navigate to api.agencies
+      
+      // Build the full path as it appears in the code (with the actual variable name)
+      const fullPathInCode = matchedVariable + (apiPath.substring(pluginConfig.apiVariableName.length) || '');
+      const fullPathParts = fullPathInCode.split('.');
+      
       let targetPath = '';
-      const pathParts = apiPath.split('.');
-
-      for (let i = 0; i < pathParts.length; i++) {
-        if (pathParts[i] === clickedWord) {
-          // Found the clicked segment, build path up to this point
-          targetPath = pathParts.slice(0, i + 1).join('.');
+      
+      // Find which segment was clicked
+      for (let i = 0; i < fullPathParts.length; i++) {
+        if (fullPathParts[i] === clickedWord) {
+          // Found the clicked segment, build the normalized path up to this point
+          if (i === 0) {
+            // Clicked on the variable name itself, no navigation
+            logger.debug(`Clicked on variable name: ${clickedWord}`);
+            return info.languageService.getDefinitionAndBoundSpan(fileName, position);
+          }
+          // Build path with normalized api variable name
+          const pathSegments = fullPathParts.slice(1, i + 1);
+          targetPath = `${pluginConfig.apiVariableName}.${pathSegments.join('.')}`;
           break;
         }
       }
@@ -258,6 +326,8 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
       const target = mapping[targetPath];
 
       if (!target) {
+        logger.debug(`Available mappings: ${Object.keys(mapping).join(', ')}`);
+        
         // If exact path not found, try to find the closest parent
         const parts = targetPath.split('.');
         for (let i = parts.length - 1; i > 0; i--) {
@@ -381,13 +451,20 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
       const sourceFile = program.getSourceFile(fileName);
       if (!sourceFile) return original;
 
+      // Find all useUtils variables in the file
+      const utilsVariables = findUseUtilsVariables(sourceFile);
+
       // Check wider context for TRPC calls
       const text = sourceFile.text;
       const wordRange = text.substring(Math.max(0, position - 50), Math.min(text.length, position + 50));
 
+      // Build pattern to check for TRPC calls
+      const variableNames = [pluginConfig.apiVariableName, ...utilsVariables];
+      const hasTrpcVariable = variableNames.some(varName => wordRange.includes(`${varName}.`));
+      
       // Check if we're hovering over a TRPC call
       if (
-        !wordRange.includes('api.') ||
+        !hasTrpcVariable ||
         (!wordRange.includes('useQuery') &&
           !wordRange.includes('useMutation') &&
           !wordRange.includes('useSubscription'))
