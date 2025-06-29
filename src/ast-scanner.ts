@@ -24,143 +24,164 @@ export class AstScanner {
     });
   }
 
-  scanRouters(routerRootPath: string): ProcedureMapping {
+  scanRoutersSync(routerRootPath: string): ProcedureMapping {
+    // Synchronous version for TypeScript Language Service compatibility
     const mapping: ProcedureMapping = {};
     const routerPath = routerRootPath;
 
-    this.logger.info(`Scanning routers in: ${routerPath}`);
+    this.logger.info(`Scanning routers in: ${routerPath} (sync mode)`);
     const scanStartTime = Date.now();
 
     try {
-      // Only recreate project if router path changed
-      if (this.lastRouterPath !== routerPath) {
-        this.logger.debug('Router path changed, recreating project');
-        this.project.getSourceFiles().forEach(sf => {
-          this.project.removeSourceFile(sf);
-        });
-        this.lastRouterPath = routerPath;
-        
-        // Add router files to project
-        const addFilesStart = Date.now();
-        this.project.addSourceFilesAtPaths([
-          `${routerPath}/**/*.ts`,
-          `!${routerPath}/**/*.test.ts`,
-          `!${routerPath}/**/*.spec.ts`,
-        ]);
-        this.logger.debug(`Added source files in ${Date.now() - addFilesStart}ms`);
-      } else {
-        // Refresh existing source files from disk
-        const refreshStart = Date.now();
-        const sourceFiles = this.project.getSourceFiles();
-        this.logger.debug(`Refreshing ${sourceFiles.length} source files...`);
-        
-        sourceFiles.forEach(sf => {
-          try {
-            sf.refreshFromFileSystemSync();
-          } catch (e) {
-            // File might have been deleted, remove it
-            this.logger.debug(`Failed to refresh ${sf.getFilePath()}, removing from project`);
-            this.project.removeSourceFile(sf);
-          }
-        });
-        
-        // Check for new files and add them
-        this.project.addSourceFilesAtPaths([
-          `${routerPath}/**/*.ts`,
-          `!${routerPath}/**/*.test.ts`,
-          `!${routerPath}/**/*.spec.ts`,
-        ]);
-        
-        this.logger.debug(`Refreshed source files in ${Date.now() - refreshStart}ms`);
-      }
-
-      // Step 1: Find all procedure definitions
+      this.prepareProject(routerPath);
+      
+      // Step 1: Find all procedure definitions (synchronous)
       const procedureScanStart = Date.now();
-      const procedures = new Map<string, NavigationTarget>();
-      this.project.getSourceFiles().forEach((sourceFile) => {
-        const filePath = sourceFile.getFilePath();
-
-        // Skip test files and other non-relevant files
-        if (filePath.includes('.test.') || 
-            filePath.includes('.spec.') ||
-            filePath.includes('.d.ts') ||
-            filePath.includes('__tests__') ||
-            filePath.includes('__mocks__')) {
-          return;
-        }
-
-        // Find all exported procedures
-        sourceFile.getExportedDeclarations().forEach((declarations, name) => {
-          // If pattern is configured, check for pattern match
-          if (this.config.procedurePattern && name.startsWith(this.config.procedurePattern)) {
-            declarations.forEach((decl) => {
-              if (Node.isVariableDeclaration(decl)) {
-                const start = decl.getStart();
-                const lineAndCol = sourceFile.getLineAndColumnAtPos(start);
-                const target = {
-                  fileName: filePath,
-                  line: lineAndCol.line,
-                  column: lineAndCol.column,
-                  position: start,
-                  length: decl.getEnd() - start,
-                  type: 'procedure' as const,
-                  procedureName: name,
-                };
-                procedures.set(name, target);
-                this.logger.debug(`Found procedure ${name} at ${path.relative(process.cwd(), filePath)}:${lineAndCol.line}`);
-              }
-            });
-          } else if (!this.config.procedurePattern) {
-            // If no pattern, check if it's a procedure by structure
-            declarations.forEach((decl) => {
-              if (Node.isVariableDeclaration(decl) && this.isProcedureDeclaration(decl)) {
-                const start = decl.getStart();
-                const lineAndCol = sourceFile.getLineAndColumnAtPos(start);
-                const target = {
-                  fileName: filePath,
-                  line: lineAndCol.line,
-                  column: lineAndCol.column,
-                  position: start,
-                  length: decl.getEnd() - start,
-                  type: 'procedure' as const,
-                  procedureName: name,
-                };
-                procedures.set(name, target);
-                this.logger.debug(`Found procedure ${name} at ${path.relative(process.cwd(), filePath)}:${lineAndCol.line}`);
-              }
-            });
-          }
-        });
-      });
-
+      const procedures = this.scanProceduresSync();
       this.logger.info(`Found ${procedures.size} procedures in ${Date.now() - procedureScanStart}ms`);
 
-      // Step 2: Build router hierarchy starting from main router
-      const hierarchyBuildStart = Date.now();
-      const mainRouterFile = this.project.getSourceFile(path.join(routerPath, 'index.ts'));
-
-      if (!mainRouterFile) {
-        this.logger.error('Could not find main router file');
-        return mapping;
-      }
-
-      const appRouter = mainRouterFile.getVariableDeclaration(this.config.mainRouterName || 'appRouter');
-      if (!appRouter) {
-        this.logger.error(`Could not find ${this.config.mainRouterName || 'appRouter'} variable`);
-        return mapping;
-      }
-
-      // Analyze the router structure
-      this.analyzeRouter(appRouter, [], mapping, procedures, 0);
+      // Step 2: Build router hierarchy
+      this.buildRouterHierarchy(routerPath, mapping, procedures);
 
       const totalScanTime = Date.now() - scanStartTime;
-      this.logger.info(`Found ${Object.keys(mapping).length} procedure mappings in ${Date.now() - hierarchyBuildStart}ms`);
       this.logger.info(`Total scan completed in ${totalScanTime}ms`);
       return mapping;
     } catch (error) {
       this.logger.error(`Error scanning routers`, error);
       return mapping;
     }
+  }
+
+  private prepareProject(routerPath: string): void {
+    // Only recreate project if router path changed
+    if (this.lastRouterPath !== routerPath) {
+      this.logger.debug('Router path changed, recreating project');
+      this.project.getSourceFiles().forEach(sf => {
+        this.project.removeSourceFile(sf);
+      });
+      this.lastRouterPath = routerPath;
+      
+      // Add router files to project
+      const addFilesStart = Date.now();
+      this.project.addSourceFilesAtPaths([
+        `${routerPath}/**/*.ts`,
+        `!${routerPath}/**/*.test.ts`,
+        `!${routerPath}/**/*.spec.ts`,
+      ]);
+      this.logger.debug(`Added source files in ${Date.now() - addFilesStart}ms`);
+    } else {
+      // Refresh existing source files from disk
+      const refreshStart = Date.now();
+      const sourceFiles = this.project.getSourceFiles();
+      this.logger.debug(`Refreshing ${sourceFiles.length} source files...`);
+      
+      sourceFiles.forEach(sf => {
+        try {
+          sf.refreshFromFileSystemSync();
+        } catch (e) {
+          // File might have been deleted, remove it
+          this.logger.debug(`Failed to refresh ${sf.getFilePath()}, removing from project`);
+          this.project.removeSourceFile(sf);
+        }
+      });
+      
+      // Check for new files and add them
+      this.project.addSourceFilesAtPaths([
+        `${routerPath}/**/*.ts`,
+        `!${routerPath}/**/*.test.ts`,
+        `!${routerPath}/**/*.spec.ts`,
+      ]);
+      
+      this.logger.debug(`Refreshed source files in ${Date.now() - refreshStart}ms`);
+    }
+  }
+
+  private scanProceduresSync(): Map<string, NavigationTarget> {
+    const procedures = new Map<string, NavigationTarget>();
+    
+    this.project.getSourceFiles().forEach((sourceFile) => {
+      const filePath = sourceFile.getFilePath();
+
+      // Skip test files and other non-relevant files
+      if (filePath.includes('.test.') || 
+          filePath.includes('.spec.') ||
+          filePath.includes('.d.ts') ||
+          filePath.includes('__tests__') ||
+          filePath.includes('__mocks__')) {
+        return;
+      }
+
+      // Find all exported procedures
+      sourceFile.getExportedDeclarations().forEach((declarations, name) => {
+        // If pattern is configured, check for pattern match
+        if (this.config.procedurePattern && name.startsWith(this.config.procedurePattern)) {
+          declarations.forEach((decl) => {
+            if (Node.isVariableDeclaration(decl)) {
+              const start = decl.getStart();
+              const lineAndCol = sourceFile.getLineAndColumnAtPos(start);
+              const target = {
+                fileName: filePath,
+                line: lineAndCol.line,
+                column: lineAndCol.column,
+                position: start,
+                length: decl.getEnd() - start,
+                type: 'procedure' as const,
+                procedureName: name,
+              };
+              procedures.set(name, target);
+              this.logger.debug(`Found procedure ${name} at ${path.relative(process.cwd(), filePath)}:${lineAndCol.line}`);
+            }
+          });
+        } else if (!this.config.procedurePattern) {
+          // If no pattern, check if it's a procedure by structure
+          declarations.forEach((decl) => {
+            if (Node.isVariableDeclaration(decl) && this.isProcedureDeclaration(decl)) {
+              const start = decl.getStart();
+              const lineAndCol = sourceFile.getLineAndColumnAtPos(start);
+              const target = {
+                fileName: filePath,
+                line: lineAndCol.line,
+                column: lineAndCol.column,
+                position: start,
+                length: decl.getEnd() - start,
+                type: 'procedure' as const,
+                procedureName: name,
+              };
+              procedures.set(name, target);
+              this.logger.debug(`Found procedure ${name} at ${path.relative(process.cwd(), filePath)}:${lineAndCol.line}`);
+            }
+          });
+        }
+      });
+    });
+    
+    return procedures;
+  }
+
+
+  private buildRouterHierarchy(
+    routerPath: string,
+    mapping: ProcedureMapping,
+    procedures: Map<string, NavigationTarget>
+  ): void {
+    const hierarchyBuildStart = Date.now();
+    const mainRouterFile = this.project.getSourceFile(path.join(routerPath, 'index.ts'));
+
+    if (!mainRouterFile) {
+      this.logger.error('Could not find main router file');
+      return;
+    }
+
+    const appRouter = mainRouterFile.getVariableDeclaration(this.config.mainRouterName || 'appRouter');
+    if (!appRouter) {
+      this.logger.error(`Could not find ${this.config.mainRouterName || 'appRouter'} variable`);
+      return;
+    }
+
+    // Analyze the router structure
+    this.analyzeRouter(appRouter, [], mapping, procedures, 0);
+
+    this.logger.info(`Found ${Object.keys(mapping).length} procedure mappings in ${Date.now() - hierarchyBuildStart}ms`);
   }
 
   private analyzeRouter(

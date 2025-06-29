@@ -208,7 +208,7 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
         // Clear the cache to force a fresh scan
         // The AST scanner will read fresh file contents
         
-        mapping = buildProcedureMapping();
+        mapping = buildProcedureMappingSync();
         if (mapping && Object.keys(mapping).length > 0) {
           cache.set(mapping);
         } else {
@@ -411,7 +411,7 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
     }
   };
 
-  function buildProcedureMapping(): ProcedureMapping | null {
+  function buildProcedureMappingSync(): ProcedureMapping | null {
     if (!routerRootPath) {
       logger.error('Router root path not set');
       return null;
@@ -420,7 +420,7 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
     try {
       logger.info('Starting router scan...');
       const start = Date.now();
-      const mapping = scanner.scanRouters(routerRootPath);
+      const mapping = scanner.scanRoutersSync(routerRootPath);
       const duration = Date.now() - start;
       logger.info(`Router scan completed in ${duration}ms`);
       return mapping;
