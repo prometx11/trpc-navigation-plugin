@@ -51,7 +51,6 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
   const pluginConfig: PluginConfig = {
     routerRoot: config.routerRoot,
     mainRouterName: config.mainRouterName || "appRouter",
-    apiVariableName: config.apiVariableName || "api",
     procedurePattern: config.procedurePattern,
     cacheTimeout:
       config.cacheTimeout !== undefined ? config.cacheTimeout : 1000, // 1 second default
@@ -68,6 +67,7 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
   // Lazy initialization - only resolve paths when actually needed
   let routerRootPath: string | null = null;
   let hasInitialized = false;
+  const trpcClientCache = new Map<string, boolean>(); // Cache for tRPC client detection
 
   function ensureInitialized(): boolean {
     if (hasInitialized) return routerRootPath !== null;
@@ -138,6 +138,133 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
     proxy[k] = (...args: any[]) => x.apply(info.languageService, args);
   }
 
+  // Helper function to check if a variable is a tRPC client
+  function isTrpcClient(variableName: string, sourceFile: ts.SourceFile, position: number): boolean {
+    // Check cache first
+    const cacheKey = `${sourceFile.fileName}:${variableName}`;
+    if (trpcClientCache.has(cacheKey)) {
+      return trpcClientCache.get(cacheKey)!;
+    }
+
+    logger.debug(`Checking if ${variableName} is a tRPC client`);
+
+    try {
+      const typeChecker = info.languageService.getProgram()?.getTypeChecker();
+      if (!typeChecker) {
+        logger.debug(`No type checker available`);
+        return false;
+      }
+
+      // Find the identifier node
+      let identifierNode: ts.Identifier | undefined;
+      
+      function findIdentifier(node: ts.Node): void {
+        if (ts.isIdentifier(node) && node.text === variableName) {
+          if (!identifierNode || 
+              (position >= node.getStart() && position <= node.getEnd())) {
+            identifierNode = node;
+          }
+        }
+        ts.forEachChild(node, findIdentifier);
+      }
+      
+      findIdentifier(sourceFile);
+      
+      if (!identifierNode) {
+        logger.debug(`Could not find identifier for ${variableName}`);
+        trpcClientCache.set(cacheKey, false);
+        return false;
+      }
+
+      // Get the symbol
+      const symbol = typeChecker.getSymbolAtLocation(identifierNode);
+      if (!symbol) {
+        logger.debug(`No symbol found for ${variableName}`);
+        trpcClientCache.set(cacheKey, false);
+        return false;
+      }
+
+      // Check the symbol's value declaration
+      const valueDeclaration = symbol.valueDeclaration;
+      if (valueDeclaration && ts.isVariableDeclaration(valueDeclaration) && valueDeclaration.initializer) {
+        const initText = valueDeclaration.initializer.getText();
+        logger.debug(`Checking initializer for ${variableName}: ${initText.substring(0, 100)}...`);
+        
+        if (initText.includes('createTRPC') || 
+            initText.includes('initTRPC') ||
+            initText.includes('useUtils') ||
+            initText.includes('useContext') ||
+            initText.includes('trpc')) {
+          logger.info(`Found tRPC client by initializer: ${variableName}`);
+          trpcClientCache.set(cacheKey, true);
+          return true;
+        }
+      }
+
+      // Check all declarations
+      const declarations = symbol.getDeclarations();
+      if (declarations) {
+        for (const decl of declarations) {
+          if (ts.isVariableDeclaration(decl) && decl.initializer) {
+            const initText = decl.initializer.getText();
+            if (initText.includes('createTRPC') || 
+                initText.includes('initTRPC') ||
+                initText.includes('useUtils') ||
+                initText.includes('useContext') ||
+                initText.includes('trpc')) {
+              logger.info(`Found tRPC client by declaration: ${variableName}`);
+              trpcClientCache.set(cacheKey, true);
+              return true;
+            }
+          }
+        }
+      }
+
+      // Check the type
+      const type = typeChecker.getTypeOfSymbolAtLocation(symbol, identifierNode);
+      const typeName = typeChecker.typeToString(type);
+      logger.debug(`Type of ${variableName}: ${typeName}`);
+      
+      if (typeName.includes('TRPC') || 
+          typeName.includes('CreateTRPC') ||
+          typeName.includes('TRPCClient') ||
+          typeName.includes('Proxy<DecoratedProcedureRecord')) {
+        logger.info(`Found tRPC client by type: ${variableName}`);
+        trpcClientCache.set(cacheKey, true);
+        return true;
+      }
+
+      // Check if symbol is imported and follows it
+      if (symbol.flags & ts.SymbolFlags.Alias) {
+        const aliasedSymbol = typeChecker.getAliasedSymbol(symbol);
+        if (aliasedSymbol && aliasedSymbol !== symbol) {
+          const aliasedDeclarations = aliasedSymbol.getDeclarations();
+          if (aliasedDeclarations) {
+            for (const decl of aliasedDeclarations) {
+              if (ts.isVariableDeclaration(decl) && decl.initializer) {
+                const initText = decl.initializer.getText();
+                if (initText.includes('createTRPC') || 
+                    initText.includes('initTRPC') ||
+                    initText.includes('trpc')) {
+                  logger.info(`Found tRPC client through import: ${variableName}`);
+                  trpcClientCache.set(cacheKey, true);
+                  return true;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      logger.debug(`${variableName} is not a tRPC client`);
+      trpcClientCache.set(cacheKey, false);
+      return false;
+    } catch (error) {
+      logger.error(`Error checking if ${variableName} is tRPC client`, error);
+      return false;
+    }
+  }
+
   // Helper function to find useUtils() variable assignments
   function findUseUtilsVariables(sourceFile: ts.SourceFile): Set<string> {
     const utilsVariables = new Set<string>();
@@ -147,31 +274,29 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
       if (ts.isVariableStatement(node)) {
         node.declarationList.declarations.forEach((decl) => {
           if (ts.isIdentifier(decl.name) && decl.initializer) {
-            // Check for pattern: const varName = api.useUtils()
+            // Check for pattern: const varName = anyVariable.useUtils()
             if (ts.isCallExpression(decl.initializer)) {
               const expr = decl.initializer.expression;
               if (
                 ts.isPropertyAccessExpression(expr) &&
                 ts.isIdentifier(expr.expression) &&
-                expr.expression.text === pluginConfig.apiVariableName &&
                 expr.name.text === "useUtils"
               ) {
+                // Just add it - we don't need to verify the base is a tRPC client
+                // because useUtils is tRPC-specific
                 utilsVariables.add(decl.name.text);
                 logger.info(`Found useUtils variable: ${decl.name.text}`);
               }
             }
           } else if (ts.isObjectBindingPattern(decl.name) && decl.initializer) {
-            // Check for destructuring: const { mutate, ... } = api.useUtils()
+            // Check for destructuring: const { mutate, ... } = anyVariable.useUtils()
             if (ts.isCallExpression(decl.initializer)) {
               const expr = decl.initializer.expression;
               if (
                 ts.isPropertyAccessExpression(expr) &&
                 ts.isIdentifier(expr.expression) &&
-                expr.expression.text === pluginConfig.apiVariableName &&
                 expr.name.text === "useUtils"
               ) {
-                // For destructuring, we'll still track the entire pattern
-                // In practice, users would need to use the destructured properties differently
                 logger.debug(`Found destructured useUtils assignment`);
               }
             }
@@ -242,14 +367,8 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
       const beforeCursor = line.substring(0, position - lineStart);
       const afterCursor = line.substring(position - lineStart);
 
-      // Build pattern to match both api.* and utilsVariable.* expressions
-      const variableNames = [pluginConfig.apiVariableName, ...utilsVariables];
-      logger.debug(`Variable names to match: [${variableNames.join(", ")}]`);
-      const apiPattern = new RegExp(
-        `(${variableNames.join("|")})\\s*\\.\\s*([\\w.]*\\w)?$`,
-      );
-      logger.debug(`Pattern: ${apiPattern.source}`);
-      logger.debug(`Testing against: "${beforeCursor}"`);
+      // Match any variable followed by a dot and path
+      const apiPattern = /(\w+)\s*\.\s*([\w.]*\w)?$/;
       const apiMatch = beforeCursor.match(apiPattern);
       if (!apiMatch) {
         logger.debug(`No API match found in line: ${line}`);
@@ -261,6 +380,18 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
 
       const matchedVariable = apiMatch[1];
       let apiPath = apiMatch[2] || "";
+      
+      // Check if this is a tRPC client or a useUtils variable
+      const isTrpc = isTrpcClient(matchedVariable, sourceFile, position);
+      const isUtils = utilsVariables.has(matchedVariable);
+      
+      if (!isTrpc && !isUtils) {
+        logger.debug(`Variable ${matchedVariable} is not a tRPC client`);
+        return info.languageService.getDefinitionAndBoundSpan(
+          fileName,
+          position,
+        );
+      }
 
       // Look forward to complete the path
       // For useUtils, we also need to match methods like .fetch(), .mutate(), .invalidate()
@@ -285,11 +416,11 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
         );
       }
 
-      // Always normalize to use the configured API variable name for mapping lookup
-      apiPath = `${pluginConfig.apiVariableName}.${apiPath}`;
+      // Build the full path with the actual variable name
+      const fullPath = `${matchedVariable}.${apiPath}`;
 
       logger.debug(
-        `Detected TRPC API call: ${apiPath} (via ${matchedVariable})`,
+        `Detected TRPC API call: ${fullPath}`,
       );
 
       // Ensure initialization before proceeding
@@ -342,12 +473,7 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
       // We need to consider the full path including the variable name for proper matching
       // For apictx.agencies.patientAgencyConnections, clicking "agencies" should navigate to api.agencies
 
-      // Build the full path as it appears in the code (with the actual variable name)
-      const fullPathInCode =
-        matchedVariable +
-        (apiPath.substring(pluginConfig.apiVariableName.length) || "");
-      const fullPathParts = fullPathInCode.split(".");
-
+      const fullPathParts = fullPath.split(".");
       let targetPath = "";
 
       // Find which segment was clicked
@@ -362,16 +488,18 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
               position,
             );
           }
-          // Build path with normalized api variable name
+          // Build path with normalized "api" prefix for mapping lookup
+          // The AST scanner always uses "api" as the prefix in its mappings
           const pathSegments = fullPathParts.slice(1, i + 1);
-          targetPath = `${pluginConfig.apiVariableName}.${pathSegments.join(".")}`;
+          targetPath = `api.${pathSegments.join(".")}`;
           break;
         }
       }
 
       // If we couldn't match the clicked word to a path segment, fall back to full path
       if (!targetPath) {
-        targetPath = apiPath;
+        // Normalize to "api" prefix for mapping lookup
+        targetPath = `api.${apiPath}`;
       }
 
       logger.debug(
@@ -529,9 +657,6 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
       const sourceFile = program.getSourceFile(fileName);
       if (!sourceFile) return original;
 
-      // Find all useUtils variables in the file
-      const utilsVariables = findUseUtilsVariables(sourceFile);
-
       // Check wider context for TRPC calls
       const text = sourceFile.text;
       const wordRange = text.substring(
@@ -539,19 +664,31 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
         Math.min(text.length, position + 50),
       );
 
-      // Build pattern to check for TRPC calls
-      const variableNames = [pluginConfig.apiVariableName, ...utilsVariables];
-      const hasTrpcVariable = variableNames.some((varName) =>
-        wordRange.includes(`${varName}.`),
-      );
-
-      // Check if we're hovering over a TRPC call
-      if (
-        !hasTrpcVariable ||
-        (!wordRange.includes("useQuery") &&
-          !wordRange.includes("useMutation") &&
-          !wordRange.includes("useSubscription"))
-      ) {
+      // Check if we're hovering over a TRPC-related call
+      const hasTrpcMethods = wordRange.includes("useQuery") ||
+                            wordRange.includes("useMutation") ||
+                            wordRange.includes("useSubscription") ||
+                            wordRange.includes("fetch") ||
+                            wordRange.includes("mutate");
+      
+      if (!hasTrpcMethods) {
+        return original;
+      }
+      
+      // Check if there's a variable.path pattern
+      const variableMatch = wordRange.match(/(\w+)\s*\.\s*[\w.]+/);
+      if (!variableMatch) {
+        return original;
+      }
+      
+      const variableName = variableMatch[1];
+      
+      // Check if it's a tRPC client
+      const utilsVariables = findUseUtilsVariables(sourceFile);
+      const isTrpc = isTrpcClient(variableName, sourceFile, position) || 
+                     utilsVariables.has(variableName);
+                     
+      if (!isTrpc) {
         return original;
       }
 

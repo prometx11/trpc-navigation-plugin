@@ -17,6 +17,8 @@ This plugin bypasses TypeScript's broken type-based navigation by directly analy
 - **Fixes Broken Navigation**: Restores "go to definition" functionality that TypeScript's declaration emit breaks
 - **Direct Source Navigation**: Takes you to the actual implementation code, not type definitions
 - **Auto-Discovery**: Automatically finds and maps all tRPC routers and procedures
+- **Intelligent Client Detection**: Automatically detects any tRPC client variable (api, trpc, client, etc.)
+- **useUtils Support**: Full navigation support for `useUtils()` variables
 - **Smart Caching**: Caches the navigation map to ensure fast performance
 - **Zero Configuration**: Works out of the box for most tRPC projects
 - **Minimal Overhead**: Only activates in projects using tRPC, with lazy initialization
@@ -71,7 +73,6 @@ The plugin works out of the box with zero configuration for most projects. All c
         "name": "trpc-navigation-plugin",
         "routerRoot": "./src/router",           // Optional: Where your TRPC routers are located
         "mainRouterName": "appRouter",          // Optional: Name of your main router export (default: "appRouter")
-        "apiVariableName": "api",               // Optional: Variable name used for TRPC client (default: "api")
         "cacheTimeout": 30000                   // Optional: Cache duration in ms (default: 30000)
       }
     ]
@@ -80,6 +81,32 @@ The plugin works out of the box with zero configuration for most projects. All c
 ```
 
 **Note**: The plugin automatically detects router locations if `routerRoot` is not specified, checking common paths like `./src/router`, `./src/routers`, `./src/server/router`, etc.
+
+## Automatic tRPC Client Detection
+
+The plugin intelligently detects any tRPC client variable, regardless of naming:
+
+```typescript
+// All of these work automatically:
+export const api = createTRPCReact<AppRouter>();
+export const trpc = createTRPCNext<AppRouter>();
+export const client = createTRPCProxyClient<AppRouter>();
+export const myCustomName = initTRPC.create();
+
+// In your components:
+api.users.getUser.useQuery();      // ✓ Works
+trpc.users.getUser.useQuery();     // ✓ Works
+client.users.getUser.query();       // ✓ Works
+myCustomName.users.getUser.query(); // ✓ Works
+
+// useUtils variables also work:
+const utils = api.useUtils();
+const apiCtx = trpc.useUtils();
+utils.users.getUser.fetch();       // ✓ Works
+apiCtx.users.getUser.invalidate();  // ✓ Works
+```
+
+No configuration needed - the plugin automatically detects these patterns!
 
 ## How It Works
 

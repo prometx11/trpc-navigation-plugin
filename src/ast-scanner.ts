@@ -241,7 +241,8 @@ export class AstScanner {
         // Check if it's a procedure (with or without pattern)
         const procedureInfo = procedures.get(valueText);
         if (procedureInfo) {
-          const fullPath = `${this.config.apiVariableName}.${[...currentPath, routeName].join('.')}`;
+          // Always use "api" as the prefix for consistency
+          const fullPath = `api.${[...currentPath, routeName].join('.')}`;
           mapping[fullPath] = procedureInfo;
           const relativePath = require('path').relative(process.cwd(), procedureInfo.fileName);
           this.logger.info(`Mapped: ${fullPath} -> ${relativePath}:${procedureInfo.line}`);
@@ -262,7 +263,8 @@ export class AstScanner {
               const nestedRouter = importedFile.getVariableDeclaration(valueText);
               if (nestedRouter && this.isRouterDeclaration(nestedRouter)) {
                 // It's a router!
-                const routerPath = `${this.config.apiVariableName}.${[...currentPath, routeName].join('.')}`;
+                // Always use "api" as the prefix for consistency
+                const routerPath = `api.${[...currentPath, routeName].join('.')}`;
                 const routerStart = nestedRouter.getStart();
                 const routerLineAndCol = importedFile.getLineAndColumnAtPos(routerStart);
 
@@ -320,7 +322,8 @@ export class AstScanner {
             : routeValue.getEnd() - routeValue.getStart();
           const lineAndCol = sourceFile.getLineAndColumnAtPos(position);
 
-          const fullPath = `${this.config.apiVariableName}.${[...currentPath, routeName].join('.')}`;
+          // Always use "api" as the prefix for consistency
+          const fullPath = `api.${[...currentPath, routeName].join('.')}`;
           mapping[fullPath] = {
             fileName: sourceFile.getFilePath(),
             line: lineAndCol.line,

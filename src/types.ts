@@ -29,12 +29,6 @@ export interface PluginConfig {
   mainRouterName?: string;
 
   /**
-   * Variable name used for the TRPC client
-   * @default "api"
-   */
-  apiVariableName?: string;
-
-  /**
    * Pattern to identify procedure exports. If not specified, procedures are detected by structure.
    * @example "procedure_" to match exports like "procedure_getSomething"
    */
