@@ -6,6 +6,7 @@ export class AstScanner {
   private project: Project;
   private logger: Logger;
   private config: PluginConfig;
+  private lastRouterPath: string | null = null;
 
   constructor(logger: Logger, config: PluginConfig) {
     this.logger = logger;
@@ -18,6 +19,8 @@ export class AstScanner {
         module: 1, // CommonJS
         moduleResolution: 2, // Node
       },
+      useInMemoryFileSystem: false,
+      skipFileDependencyResolution: true,
     });
   }
 
@@ -26,40 +29,65 @@ export class AstScanner {
     const routerPath = routerRootPath;
 
     this.logger.info(`Scanning routers in: ${routerPath}`);
+    const scanStartTime = Date.now();
 
     try {
-      // Clear any existing source files to ensure fresh content
-      this.project.getSourceFiles().forEach(sf => {
-        this.project.removeSourceFile(sf);
-      });
-      
-      // Force ts-morph to skip cache and read from disk
-      this.project = new Project({
-        skipAddingFilesFromTsConfig: true,
-        compilerOptions: {
-          allowJs: true,
-          target: 99, // ESNext
-          module: 1, // CommonJS
-          moduleResolution: 2, // Node
-        },
-        useInMemoryFileSystem: false,
-        skipFileDependencyResolution: true,
-      });
-      
-      // Add router files to project with fresh content
-      this.project.addSourceFilesAtPaths([
-        `${routerPath}/**/*.ts`,
-        `!${routerPath}/**/*.test.ts`,
-        `!${routerPath}/**/*.spec.ts`,
-      ]);
+      // Only recreate project if router path changed
+      if (this.lastRouterPath !== routerPath) {
+        this.logger.debug('Router path changed, recreating project');
+        this.project.getSourceFiles().forEach(sf => {
+          this.project.removeSourceFile(sf);
+        });
+        this.lastRouterPath = routerPath;
+        
+        // Add router files to project
+        const addFilesStart = Date.now();
+        this.project.addSourceFilesAtPaths([
+          `${routerPath}/**/*.ts`,
+          `!${routerPath}/**/*.test.ts`,
+          `!${routerPath}/**/*.spec.ts`,
+        ]);
+        this.logger.debug(`Added source files in ${Date.now() - addFilesStart}ms`);
+      } else {
+        // Refresh existing source files from disk
+        const refreshStart = Date.now();
+        const sourceFiles = this.project.getSourceFiles();
+        this.logger.debug(`Refreshing ${sourceFiles.length} source files...`);
+        
+        sourceFiles.forEach(sf => {
+          try {
+            sf.refreshFromFileSystemSync();
+          } catch (e) {
+            // File might have been deleted, remove it
+            this.logger.debug(`Failed to refresh ${sf.getFilePath()}, removing from project`);
+            this.project.removeSourceFile(sf);
+          }
+        });
+        
+        // Check for new files and add them
+        this.project.addSourceFilesAtPaths([
+          `${routerPath}/**/*.ts`,
+          `!${routerPath}/**/*.test.ts`,
+          `!${routerPath}/**/*.spec.ts`,
+        ]);
+        
+        this.logger.debug(`Refreshed source files in ${Date.now() - refreshStart}ms`);
+      }
 
       // Step 1: Find all procedure definitions
+      const procedureScanStart = Date.now();
       const procedures = new Map<string, NavigationTarget>();
       this.project.getSourceFiles().forEach((sourceFile) => {
         const filePath = sourceFile.getFilePath();
 
-        // Skip test files
-        if (filePath.includes('.test.') || filePath.includes('.d.ts')) return;
+        // Skip test files and other non-relevant files
+        if (filePath.includes('.test.') || 
+            filePath.includes('.spec.') ||
+            filePath.includes('.d.ts') ||
+            filePath.includes('__tests__') ||
+            filePath.includes('__mocks__')) {
+          return;
+        }
 
         // Find all exported procedures
         sourceFile.getExportedDeclarations().forEach((declarations, name) => {
@@ -105,9 +133,10 @@ export class AstScanner {
         });
       });
 
-      this.logger.info(`Found ${procedures.size} procedures`);
+      this.logger.info(`Found ${procedures.size} procedures in ${Date.now() - procedureScanStart}ms`);
 
       // Step 2: Build router hierarchy starting from main router
+      const hierarchyBuildStart = Date.now();
       const mainRouterFile = this.project.getSourceFile(path.join(routerPath, 'index.ts'));
 
       if (!mainRouterFile) {
@@ -124,7 +153,9 @@ export class AstScanner {
       // Analyze the router structure
       this.analyzeRouter(appRouter, [], mapping, procedures, 0);
 
-      this.logger.info(`Found ${Object.keys(mapping).length} procedure mappings`);
+      const totalScanTime = Date.now() - scanStartTime;
+      this.logger.info(`Found ${Object.keys(mapping).length} procedure mappings in ${Date.now() - hierarchyBuildStart}ms`);
+      this.logger.info(`Total scan completed in ${totalScanTime}ms`);
       return mapping;
     } catch (error) {
       this.logger.error(`Error scanning routers`, error);
