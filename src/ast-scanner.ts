@@ -28,7 +28,25 @@ export class AstScanner {
     this.logger.info(`Scanning routers in: ${routerPath}`);
 
     try {
-      // Add router files to project
+      // Clear any existing source files to ensure fresh content
+      this.project.getSourceFiles().forEach(sf => {
+        this.project.removeSourceFile(sf);
+      });
+      
+      // Force ts-morph to skip cache and read from disk
+      this.project = new Project({
+        skipAddingFilesFromTsConfig: true,
+        compilerOptions: {
+          allowJs: true,
+          target: 99, // ESNext
+          module: 1, // CommonJS
+          moduleResolution: 2, // Node
+        },
+        useInMemoryFileSystem: false,
+        skipFileDependencyResolution: true,
+      });
+      
+      // Add router files to project with fresh content
       this.project.addSourceFilesAtPaths([
         `${routerPath}/**/*.ts`,
         `!${routerPath}/**/*.test.ts`,
@@ -51,15 +69,17 @@ export class AstScanner {
               if (Node.isVariableDeclaration(decl)) {
                 const start = decl.getStart();
                 const lineAndCol = sourceFile.getLineAndColumnAtPos(start);
-                procedures.set(name, {
+                const target = {
                   fileName: filePath,
                   line: lineAndCol.line,
                   column: lineAndCol.column,
                   position: start,
                   length: decl.getEnd() - start,
-                  type: 'procedure',
+                  type: 'procedure' as const,
                   procedureName: name,
-                });
+                };
+                procedures.set(name, target);
+                this.logger.debug(`Found procedure ${name} at ${path.relative(process.cwd(), filePath)}:${lineAndCol.line}`);
               }
             });
           } else if (!this.config.procedurePattern) {
@@ -68,15 +88,17 @@ export class AstScanner {
               if (Node.isVariableDeclaration(decl) && this.isProcedureDeclaration(decl)) {
                 const start = decl.getStart();
                 const lineAndCol = sourceFile.getLineAndColumnAtPos(start);
-                procedures.set(name, {
+                const target = {
                   fileName: filePath,
                   line: lineAndCol.line,
                   column: lineAndCol.column,
                   position: start,
                   length: decl.getEnd() - start,
-                  type: 'procedure',
+                  type: 'procedure' as const,
                   procedureName: name,
-                });
+                };
+                procedures.set(name, target);
+                this.logger.debug(`Found procedure ${name} at ${path.relative(process.cwd(), filePath)}:${lineAndCol.line}`);
               }
             });
           }
@@ -169,7 +191,8 @@ export class AstScanner {
         if (procedureInfo) {
           const fullPath = `${this.config.apiVariableName}.${[...currentPath, routeName].join('.')}`;
           mapping[fullPath] = procedureInfo;
-          this.logger.debug(`Mapped: ${fullPath} -> ${procedureInfo.fileName}:${procedureInfo.line}`);
+          const relativePath = require('path').relative(process.cwd(), procedureInfo.fileName);
+          this.logger.info(`Mapped: ${fullPath} -> ${relativePath}:${procedureInfo.line}`);
         } else {
           // Check if it's a nested router by following the import
           this.logger.debug(`Checking if ${valueText} is a router at ${[...currentPath, routeName].join('.')}`);

@@ -49,7 +49,7 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
     mainRouterName: config.mainRouterName || 'appRouter',
     apiVariableName: config.apiVariableName || 'api',
     procedurePattern: config.procedurePattern,
-    cacheTimeout: config.cacheTimeout || 30000,
+    cacheTimeout: config.cacheTimeout !== undefined ? config.cacheTimeout : 1000, // 1 second default
     maxDepth: config.maxDepth || 10,
     verbose: config.verbose || false,
   };
@@ -57,7 +57,7 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
   logger.info('TRPC Navigation Plugin initialized');
   logger.debug(`Configuration: ${JSON.stringify(pluginConfig, null, 2)}`);
 
-  const cache = new NavigationCache(pluginConfig.cacheTimeout);
+  const cache = new NavigationCache(pluginConfig.cacheTimeout, logger);
   const scanner = new AstScanner(logger, pluginConfig);
 
   // Lazy initialization - only resolve paths when actually needed
@@ -204,6 +204,10 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
       let mapping = cache.get();
       if (!mapping) {
         logger.info('Cache miss, rebuilding procedure mapping...');
+        
+        // Clear the cache to force a fresh scan
+        // The AST scanner will read fresh file contents
+        
         mapping = buildProcedureMapping();
         if (mapping && Object.keys(mapping).length > 0) {
           cache.set(mapping);
