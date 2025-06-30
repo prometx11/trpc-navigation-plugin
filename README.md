@@ -21,7 +21,7 @@ This plugin bypasses TypeScript's broken type-based navigation by dynamically re
 - **useUtils Support**: Full navigation support for `useUtils()` variables
 - **Cross-Package Support**: Works seamlessly in monorepos with imported router types
 - **Zero Configuration**: Works out of the box - no setup required
-- **Minimal Overhead**: Only activates in projects using tRPC
+- **Minimal Overhead**: Lightweight with ~2ms response time
 
 ## When You Need This Plugin
 
@@ -73,6 +73,26 @@ The plugin works with zero configuration. Simply add it to your tsconfig.json:
         "name": "trpc-navigation-plugin"
       }
     ]
+  }
+}
+```
+
+### Monorepo Setup
+
+In monorepos, add the plugin to each package that uses tRPC (directly or through another package):
+
+```json
+// packages/api/tsconfig.json - has direct tRPC dependency
+{
+  "compilerOptions": {
+    "plugins": [{ "name": "trpc-navigation-plugin" }]
+  }
+}
+
+// packages/web/tsconfig.json - uses tRPC through @my/api package
+{
+  "compilerOptions": {
+    "plugins": [{ "name": "trpc-navigation-plugin" }]
   }
 }
 ```
@@ -147,14 +167,6 @@ export const appRouter = t.router({...})    // ✓ Works
 export type AppRouter = typeof appRouter    // ✓ Type resolved dynamically
 ```
 
-### Smart Package Detection
-
-The plugin automatically detects if a package uses TRPC by checking for:
-- Any `@trpc/*` dependencies
-- Packages with "trpc" in the name
-- Common API package patterns (packages ending with `/api`)
-
-If none are found, the plugin disables itself with zero overhead. This means you can safely add it to a shared TypeScript config without impacting non-TRPC packages.
 
 ## Troubleshooting
 

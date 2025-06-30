@@ -1,6 +1,6 @@
 {
   "name": "trpc-navigation-plugin",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "description": "TypeScript Language Service Plugin that fixes broken 'go to definition' for tRPC when using declaration emit",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

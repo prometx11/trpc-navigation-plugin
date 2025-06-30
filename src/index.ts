@@ -1,37 +1,16 @@
-import * as path from 'node:path';
-import * as ts from 'typescript/lib/tsserverlibrary';
-import { createLogger } from './logger';
-import { createNavigationResult, detectTrpcApiCall, findWordAtPosition, parseNavigationPath } from './navigation-utils';
-import { Navigator } from './navigator';
-import { TypeResolver } from './type-resolver';
-import type { PluginConfig } from './types';
+import * as ts from "typescript/lib/tsserverlibrary";
+import { createLogger } from "./logger";
+import {
+  createNavigationResult,
+  detectTrpcApiCall,
+  findWordAtPosition,
+  parseNavigationPath,
+} from "./navigation-utils";
+import { Navigator } from "./navigator";
+import { TypeResolver } from "./type-resolver";
+import type { PluginConfig } from "./types";
 
 function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
-  // Check if this package uses TRPC
-  const projectRoot = info.project.getCurrentDirectory();
-  const packageJsonPath = path.join(projectRoot, 'package.json');
-
-  try {
-    const fs = require('node:fs');
-    if (fs.existsSync(packageJsonPath)) {
-      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-      const deps = {
-        ...packageJson.dependencies,
-        ...packageJson.devDependencies,
-        ...packageJson.peerDependencies,
-      };
-
-      const hasTrpcDep = Object.keys(deps).some((dep) => dep.includes('@trpc/') || dep.includes('trpc'));
-
-      if (!hasTrpcDep) {
-        // This package doesn't use TRPC, return unmodified language service
-        return info.languageService;
-      }
-    }
-  } catch (_error) {
-    // If we can't determine, proceed with normal initialization
-  }
-
   // Read configuration
   const config: Partial<PluginConfig> = info.config || {};
   const pluginConfig: PluginConfig = {
@@ -39,7 +18,7 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
   };
 
   const logger = createLogger(info, pluginConfig.verbose);
-  logger.info('TRPC Navigation Plugin initialized');
+  logger.info("TRPC Navigation Plugin initialized");
 
   const typeResolver = new TypeResolver(logger, info.serverHost);
   const navigator = new Navigator(logger, info.serverHost);
@@ -47,7 +26,9 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
   // Proxy the language service
   const proxy: ts.LanguageService = Object.create(null);
 
-  for (const k of Object.keys(info.languageService) as Array<keyof ts.LanguageService>) {
+  for (const k of Object.keys(info.languageService) as Array<
+    keyof ts.LanguageService
+  >) {
     const x = info.languageService[k];
     // @ts-ignore - TypeScript's type system can't properly handle this proxy pattern
     proxy[k] = (...args: any[]) => x.apply(info.languageService, args);
@@ -88,7 +69,10 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
           if (ts.isIdentifier(decl.name) && decl.initializer) {
             if (ts.isCallExpression(decl.initializer)) {
               const expr = decl.initializer.expression;
-              if (ts.isPropertyAccessExpression(expr) && expr.name.text === 'useUtils') {
+              if (
+                ts.isPropertyAccessExpression(expr) &&
+                expr.name.text === "useUtils"
+              ) {
                 utilsVariables.add(decl.name.text);
                 logger.info(`Found useUtils variable: ${decl.name.text}`);
               }
@@ -104,45 +88,71 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
   }
 
   // Override getDefinitionAndBoundSpan for navigation
-  proxy.getDefinitionAndBoundSpan = (fileName: string, position: number): ts.DefinitionInfoAndBoundSpan | undefined => {
+  proxy.getDefinitionAndBoundSpan = (
+    fileName: string,
+    position: number,
+  ): ts.DefinitionInfoAndBoundSpan | undefined => {
     try {
       // Skip non-TS files
       if (!fileName.match(/\.(ts|tsx|js|jsx)$/)) {
-        return info.languageService.getDefinitionAndBoundSpan(fileName, position);
+        return info.languageService.getDefinitionAndBoundSpan(
+          fileName,
+          position,
+        );
       }
 
       const program = info.languageService.getProgram();
       if (!program) {
-        return info.languageService.getDefinitionAndBoundSpan(fileName, position);
+        return info.languageService.getDefinitionAndBoundSpan(
+          fileName,
+          position,
+        );
       }
 
       const sourceFile = program.getSourceFile(fileName);
       if (!sourceFile) {
-        return info.languageService.getDefinitionAndBoundSpan(fileName, position);
+        return info.languageService.getDefinitionAndBoundSpan(
+          fileName,
+          position,
+        );
       }
 
       const typeChecker = program.getTypeChecker();
       const text = sourceFile.text;
 
       // Find the line containing the position
-      const lineStart = text.lastIndexOf('\n', position) + 1;
-      const lineEnd = text.indexOf('\n', position);
-      const line = text.substring(lineStart, lineEnd === -1 ? text.length : lineEnd);
+      const lineStart = text.lastIndexOf("\n", position) + 1;
+      const lineEnd = text.indexOf("\n", position);
+      const line = text.substring(
+        lineStart,
+        lineEnd === -1 ? text.length : lineEnd,
+      );
       const cursorPositionInLine = position - lineStart;
 
       // Detect tRPC API call
       const apiCall = detectTrpcApiCall(line, cursorPositionInLine);
       if (!apiCall) {
-        return info.languageService.getDefinitionAndBoundSpan(fileName, position);
+        return info.languageService.getDefinitionAndBoundSpan(
+          fileName,
+          position,
+        );
       }
 
       // Check if it's a tRPC client or useUtils variable
       const utilsVariables = findUseUtilsVariables(sourceFile);
-      const isTrpcClient = typeResolver.isTrpcClient(apiCall.variable, sourceFile, position, typeChecker);
+      const isTrpcClient = typeResolver.isTrpcClient(
+        apiCall.variable,
+        sourceFile,
+        position,
+        typeChecker,
+      );
       const isUtilsVar = utilsVariables.has(apiCall.variable);
 
       if (!isTrpcClient && !isUtilsVar) {
-        return info.languageService.getDefinitionAndBoundSpan(fileName, position);
+        return info.languageService.getDefinitionAndBoundSpan(
+          fileName,
+          position,
+        );
       }
 
       // Find which word was clicked
@@ -150,12 +160,19 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
       const fullPath = `${apiCall.variable}.${apiCall.path}`;
 
       // Parse the navigation path
-      const navPath = parseNavigationPath(fullPath, clickedWord.word, apiCall.variable);
+      const navPath = parseNavigationPath(
+        fullPath,
+        clickedWord.word,
+        apiCall.variable,
+      );
       if (!navPath) {
-        return info.languageService.getDefinitionAndBoundSpan(fileName, position);
+        return info.languageService.getDefinitionAndBoundSpan(
+          fileName,
+          position,
+        );
       }
 
-      logger.debug(`Navigating to: ${navPath.targetPath.join('.')}`);
+      logger.debug(`Navigating to: ${navPath.targetPath.join(".")}`);
 
       // For useUtils variables, we need to find the original tRPC client
       let targetVariable = apiCall.variable;
@@ -165,13 +182,16 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
 
         // Find the declaration of the utils variable
         const utilsDecl = findVariableDeclaration(sourceFile, targetVariable);
-        if (utilsDecl?.initializer && ts.isCallExpression(utilsDecl.initializer)) {
+        if (
+          utilsDecl?.initializer &&
+          ts.isCallExpression(utilsDecl.initializer)
+        ) {
           const expr = utilsDecl.initializer.expression;
 
           // Check if it's variableName.useUtils()
           if (
             ts.isPropertyAccessExpression(expr) &&
-            expr.name.text === 'useUtils' &&
+            expr.name.text === "useUtils" &&
             ts.isIdentifier(expr.expression)
           ) {
             targetVariable = expr.expression.text;
@@ -180,45 +200,69 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
         }
 
         if (targetVariable === apiCall.variable) {
-          logger.error('Could not trace useUtils to tRPC client');
-          return info.languageService.getDefinitionAndBoundSpan(fileName, position);
+          logger.error("Could not trace useUtils to tRPC client");
+          return info.languageService.getDefinitionAndBoundSpan(
+            fileName,
+            position,
+          );
         }
       }
 
       // Extract router type from the tRPC client (or traced variable)
-      const routerInfo = typeResolver.extractRouterType(targetVariable, sourceFile, position, typeChecker);
+      const routerInfo = typeResolver.extractRouterType(
+        targetVariable,
+        sourceFile,
+        position,
+        typeChecker,
+      );
 
       if (!routerInfo) {
-        logger.error('Could not extract router type', {
+        logger.error("Could not extract router type", {
           variable: apiCall.variable,
           fileName: sourceFile.fileName,
           position,
           fullPath,
-          targetPath: navPath.targetPath.join('.'),
+          targetPath: navPath.targetPath.join("."),
           clickedWord: clickedWord.word,
         });
-        return info.languageService.getDefinitionAndBoundSpan(fileName, position);
+        return info.languageService.getDefinitionAndBoundSpan(
+          fileName,
+          position,
+        );
       }
 
       // Navigate through the router
-      const definition = navigator.navigateRouterPath(routerInfo.routerSymbol, navPath.targetPath, typeChecker);
+      const definition = navigator.navigateRouterPath(
+        routerInfo.routerSymbol,
+        navPath.targetPath,
+        typeChecker,
+      );
 
       if (!definition) {
-        logger.error('Navigation failed');
-        return info.languageService.getDefinitionAndBoundSpan(fileName, position);
+        logger.error("Navigation failed");
+        return info.languageService.getDefinitionAndBoundSpan(
+          fileName,
+          position,
+        );
       }
 
       logger.info(`Navigation success: ${definition.fileName}`);
       return createNavigationResult(definition, clickedWord);
     } catch (error) {
-      logger.error('Error in getDefinitionAndBoundSpan', error);
+      logger.error("Error in getDefinitionAndBoundSpan", error);
       return info.languageService.getDefinitionAndBoundSpan(fileName, position);
     }
   };
 
   // Override getQuickInfoAtPosition for hover hints
-  proxy.getQuickInfoAtPosition = (fileName: string, position: number): ts.QuickInfo | undefined => {
-    const original = info.languageService.getQuickInfoAtPosition(fileName, position);
+  proxy.getQuickInfoAtPosition = (
+    fileName: string,
+    position: number,
+  ): ts.QuickInfo | undefined => {
+    const original = info.languageService.getQuickInfoAtPosition(
+      fileName,
+      position,
+    );
 
     try {
       const program = info.languageService.getProgram();
@@ -231,7 +275,10 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
       const text = sourceFile.text;
 
       // Check if we're near a tRPC call
-      const wordRange = text.substring(Math.max(0, position - 50), Math.min(text.length, position + 50));
+      const wordRange = text.substring(
+        Math.max(0, position - 50),
+        Math.min(text.length, position + 50),
+      );
 
       // Check if we're in a pattern like: variable.path.path.method()
       if (!wordRange.match(/\b\w+\s*\.\s*[\w.]+/)) {
@@ -246,7 +293,12 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
       const utilsVariables = findUseUtilsVariables(sourceFile);
 
       if (
-        !typeResolver.isTrpcClient(variableName, sourceFile, position, typeChecker) &&
+        !typeResolver.isTrpcClient(
+          variableName,
+          sourceFile,
+          position,
+          typeChecker,
+        ) &&
         !utilsVariables.has(variableName)
       ) {
         return original;
@@ -255,15 +307,18 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
       // Add navigation hint
       if (original?.displayParts) {
         original.displayParts.push(
-          { text: '\n', kind: 'lineBreak' },
-          { text: '[TRPC-Nav] ', kind: 'punctuation' },
-          { text: 'Cmd+Click to navigate to procedure definition', kind: 'text' },
+          { text: "\n", kind: "lineBreak" },
+          { text: "[TRPC-Nav] ", kind: "punctuation" },
+          {
+            text: "Cmd+Click to navigate to procedure definition",
+            kind: "text",
+          },
         );
       }
 
       return original;
     } catch (error) {
-      logger.error('Error in getQuickInfoAtPosition', error);
+      logger.error("Error in getQuickInfoAtPosition", error);
       return original;
     }
   };
