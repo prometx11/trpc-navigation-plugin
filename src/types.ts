@@ -10,42 +10,7 @@ export interface NavigationTarget {
   procedureName?: string;
 }
 
-export interface ProcedureMapping {
-  [apiPath: string]: NavigationTarget;
-}
-
 export interface PluginConfig {
-  /**
-   * Root directory where TRPC routers are located.
-   * If not specified, the plugin will try common locations.
-   * @example "./src/router" or "../api/src/router"
-   */
-  routerRoot?: string;
-
-  /**
-   * Name of the main router export
-   * @default "appRouter"
-   */
-  mainRouterName?: string;
-
-  /**
-   * Pattern to identify procedure exports. If not specified, procedures are detected by structure.
-   * @example "procedure_" to match exports like "procedure_getSomething"
-   */
-  procedurePattern?: string;
-
-  /**
-   * Cache timeout in milliseconds
-   * @default 30000 (30 seconds)
-   */
-  cacheTimeout?: number;
-
-  /**
-   * Maximum depth for recursive router analysis
-   * @default 10
-   */
-  maxDepth?: number;
-
   /**
    * Enable verbose logging
    * @default false
@@ -54,9 +19,9 @@ export interface PluginConfig {
 }
 
 export interface Logger {
-  info(message: string): void;
-  error(message: string, error?: unknown): void;
-  debug(message: string): void;
+  info(message: string, context?: unknown): void;
+  error(message: string, errorOrContext?: unknown): void;
+  debug(message: string, context?: unknown): void;
 }
 
 export interface TrpcNavigationPlugin {

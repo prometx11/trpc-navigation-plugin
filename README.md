@@ -10,18 +10,18 @@ This is caused by how TypeScript handles the complex type inference in tRPC's ro
 
 ## Solution
 
-This plugin bypasses TypeScript's broken type-based navigation by directly analyzing your tRPC router structure using the TypeScript AST. When you Cmd+Click on a tRPC procedure, the plugin intercepts the navigation request and takes you directly to the procedure implementation in your source code.
+This plugin bypasses TypeScript's broken type-based navigation by dynamically resolving your tRPC router types at runtime. When you Cmd+Click on a tRPC procedure, the plugin intercepts the navigation request and takes you directly to the procedure implementation in your source code.
 
 ## Features
 
 - **Fixes Broken Navigation**: Restores "go to definition" functionality that TypeScript's declaration emit breaks
 - **Direct Source Navigation**: Takes you to the actual implementation code, not type definitions
-- **Auto-Discovery**: Automatically finds and maps all tRPC routers and procedures
+- **Dynamic Resolution**: Resolves router types on-demand with ~2ms performance
 - **Intelligent Client Detection**: Automatically detects any tRPC client variable (api, trpc, client, etc.)
 - **useUtils Support**: Full navigation support for `useUtils()` variables
-- **Smart Caching**: Caches the navigation map to ensure fast performance
-- **Zero Configuration**: Works out of the box for most tRPC projects
-- **Minimal Overhead**: Only activates in projects using tRPC, with lazy initialization
+- **Cross-Package Support**: Works seamlessly in monorepos with imported router types
+- **Zero Configuration**: Works out of the box - no setup required
+- **Minimal Overhead**: Only activates in projects using tRPC
 
 ## When You Need This Plugin
 
@@ -63,7 +63,23 @@ You DON'T need this plugin if:
 
 ## Configuration
 
-The plugin works out of the box with zero configuration for most projects. All configuration options are optional:
+The plugin works with zero configuration. Simply add it to your tsconfig.json:
+
+```json
+{
+  "compilerOptions": {
+    "plugins": [
+      {
+        "name": "trpc-navigation-plugin"
+      }
+    ]
+  }
+}
+```
+
+### Optional: Enable Verbose Logging
+
+For debugging, you can enable verbose logging:
 
 ```json
 {
@@ -71,16 +87,12 @@ The plugin works out of the box with zero configuration for most projects. All c
     "plugins": [
       {
         "name": "trpc-navigation-plugin",
-        "routerRoot": "./src/router",           // Optional: Where your TRPC routers are located
-        "mainRouterName": "appRouter",          // Optional: Name of your main router export (default: "appRouter")
-        "cacheTimeout": 30000                   // Optional: Cache duration in ms (default: 30000)
+        "verbose": true  // Enable detailed logging
       }
     ]
   }
 }
 ```
-
-**Note**: The plugin automatically detects router locations if `routerRoot` is not specified, checking common paths like `./src/router`, `./src/routers`, `./src/server/router`, etc.
 
 ## Automatic tRPC Client Detection
 
@@ -110,32 +122,29 @@ No configuration needed - the plugin automatically detects these patterns!
 
 ## How It Works
 
-1. **Lazy Initialization**: The plugin only activates when you first click on a TRPC API call
-2. **Auto-Detection**: Automatically finds and scans your router directory (or uses `routerRoot` if configured)
-3. **AST Analysis**: Uses ts-morph to analyze your TypeScript files and build a mapping of API paths to source locations
-4. **Smart Navigation**: When you Cmd+Click on an API call, it intercepts the request and returns the exact source location
+1. **Dynamic Type Resolution**: When you click on a tRPC call, the plugin dynamically resolves the router type from your client
+2. **Type Chain Following**: Follows TypeScript's type chain from `AppRouter` to find the actual router implementation
+3. **Cross-Package Support**: Automatically resolves imports across package boundaries in monorepos
+4. **Smart Navigation**: Intercepts navigation requests and returns the exact source location
 5. **Contextual Navigation**: Click on different parts for different results:
    - `api.billing.claims` - clicking "billing" goes to billing router
    - `api.billing.claims` - clicking "claims" goes to claims procedure/router
 
-The plugin detects routers and procedures by their structure, not their names:
+The plugin works with any tRPC pattern:
 
-**Routers** - All of these work automatically:
+**Client Creation**:
+```typescript
+// All patterns work automatically
+export const api = createTRPCReact<AppRouter>();
+export const trpc = createTRPCNext<AppRouter>();
+import { api } from '@my/api';  // Cross-package imports work
+```
+
+**Router Definitions**:
 ```typescript
 export const userRouter = router({...})     // ✓ Works
-export const users = router({...})          // ✓ Works
-export const userManagement = router({...}) // ✓ Works
-export const foo = router({...})            // ✓ Works
-```
-
-**Procedures** - Automatically detected when no pattern is configured:
-```typescript
-export const getUser = protectedProcedure.query(...)      // ✓ Works
-export const updateUser = staffProcedure.mutation(...)    // ✓ Works
-export const subscribeToUpdates = publicProcedure         // ✓ Works
-  .input(z.object({...}))
-  .subscription(...)
-```
+export const appRouter = t.router({...})    // ✓ Works
+export type AppRouter = typeof appRouter    // ✓ Type resolved dynamically
 ```
 
 ### Smart Package Detection
@@ -152,14 +161,16 @@ If none are found, the plugin disables itself with zero overhead. This means you
 If navigation isn't working:
 
 1. Check the TS Server logs for `[TRPC-Nav]` entries
-2. If using `routerRoot`, verify the path is correct and the directory exists
-3. Ensure your main router is exported with the expected name (default: `appRouter`)
-4. Make sure routers are properly exported and connected to your main router
-5. Try restarting the TS Server after making configuration changes
+2. Enable verbose logging by adding `"verbose": true` to the plugin config
+3. Ensure your tRPC client is created with the router type: `createTRPCReact<AppRouter>()`
+4. Make sure your router type is properly exported: `export type AppRouter = typeof appRouter`
+5. Restart the TS Server after configuration changes: `Cmd+Shift+P` → "TypeScript: Restart TS Server"
 
 ## Technical Details
 
-- Uses ts-morph for AST traversal to find procedure implementations
+- Uses TypeScript's Language Service API for dynamic type resolution
+- Resolves router types in ~2ms without any caching needed
 - Works around TypeScript's navigation bug without modifying your build process
 - Compatible with tRPC v10+ and v11 that use the standard router pattern
+- Supports monorepo setups with cross-package imports
 - Does not interfere with TypeScript's type checking or declaration emit
