@@ -15,12 +15,35 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
   const config: Partial<PluginConfig> = info.config || {};
   const pluginConfig: PluginConfig = {
     verbose: config.verbose || false,
+    router: config.router,
+    nestedRouters: config.nestedRouters,
   };
 
   const logger = createLogger(info, pluginConfig.verbose);
   logger.info("TRPC Navigation Plugin initialized");
 
-  const typeResolver = new TypeResolver(logger, info.serverHost);
+  // Validate configuration
+  if (!pluginConfig.router) {
+    logger.error("TRPC Navigation Plugin requires router configuration");
+    logger.error("Add to your tsconfig.json:");
+    logger.error("\"plugins\": [{");
+    logger.error("  \"name\": \"trpc-navigation-plugin\",");
+    logger.error("  \"router\": {");
+    logger.error("    \"filePath\": \"./src/server/api/root.ts\",");
+    logger.error("    \"variableName\": \"appRouter\"");
+    logger.error("  }");
+    logger.error("}]");
+    // Return the original language service without modifications
+    return info.languageService;
+  }
+
+  // Validate router configuration
+  if (!pluginConfig.router.filePath || !pluginConfig.router.variableName) {
+    logger.error("Invalid router configuration: both filePath and variableName are required");
+    return info.languageService;
+  }
+
+  const typeResolver = new TypeResolver(logger, info.serverHost, pluginConfig);
   const navigator = new Navigator(logger, info.serverHost);
 
   // Proxy the language service
@@ -214,6 +237,7 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
         sourceFile,
         position,
         typeChecker,
+        program,
       );
 
       if (!routerInfo) {

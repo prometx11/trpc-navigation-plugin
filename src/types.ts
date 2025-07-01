@@ -10,12 +10,31 @@ export interface NavigationTarget {
   procedureName?: string;
 }
 
+export interface RouterConfig {
+  /**
+   * Path to the file containing the router definition
+   */
+  filePath: string;
+  /**
+   * Name of the exported router variable
+   */
+  variableName: string;
+}
+
 export interface PluginConfig {
   /**
    * Enable verbose logging
    * @default false
    */
   verbose?: boolean;
+  /**
+   * Router configuration - required for navigation
+   */
+  router?: RouterConfig;
+  /**
+   * Optional nested routers configuration
+   */
+  nestedRouters?: Record<string, RouterConfig>;
 }
 
 export interface Logger {
