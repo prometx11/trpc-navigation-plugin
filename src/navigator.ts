@@ -68,18 +68,30 @@ export class Navigator {
       return null;
     }
 
+    let routesObject: ts.ObjectLiteralExpression | null = null;
+
+    // Check for router() call pattern
     const routerCall = this.findRouterCall(declaration.initializer);
-    if (!routerCall || !routerCall.arguments.length) {
-      return null;
+    if (routerCall && routerCall.arguments.length > 0 && ts.isObjectLiteralExpression(routerCall.arguments[0])) {
+      this.logger.debug(`Found router call with object literal argument`);
+      routesObject = routerCall.arguments[0];
+    }
+    // Check for object literal pattern (with or without satisfies)
+    else if (ts.isObjectLiteralExpression(declaration.initializer)) {
+      routesObject = declaration.initializer;
+    }
+    // Check for satisfies expression with object literal
+    else if (ts.isSatisfiesExpression(declaration.initializer) && 
+             ts.isObjectLiteralExpression(declaration.initializer.expression)) {
+      routesObject = declaration.initializer.expression;
     }
 
-    const routesArg = routerCall.arguments[0];
-    if (!ts.isObjectLiteralExpression(routesArg)) {
+    if (!routesObject) {
       return null;
     }
 
     // Find the property matching the segment
-    for (const prop of routesArg.properties) {
+    for (const prop of routesObject.properties) {
       if (!ts.isPropertyAssignment(prop) || !ts.isIdentifier(prop.name) || prop.name.text !== segment) {
         continue;
       }
@@ -111,14 +123,27 @@ export class Navigator {
     }
 
     const isProcedure = this.isProcedureDeclaration(declaration);
+    const isRouter = this.isRouterDeclaration(declaration.initializer!);
+    this.logger.debug(`Found ${identifier.text}: isProcedure=${isProcedure}, isRouter=${isRouter}, isLastSegment=${isLastSegment}`);
 
-    if (isLastSegment || isProcedure) {
+    if (isProcedure && isLastSegment) {
+      // This is a procedure and we're at the end of the path
       return {
         definition: this.createDefinitionFromDeclaration(declaration, segment),
       };
-    } else {
-      // Continue navigation with this router
+    } else if (!isProcedure && isLastSegment) {
+      // This is a router and we're at the end - go to the router definition
+      return {
+        definition: this.createDefinitionFromDeclaration(declaration, segment),
+      };
+    } else if (!isProcedure) {
+      // This is a router and not the last segment - continue navigation
       return { nextDeclaration: declaration };
+    } else {
+      // This is a procedure but not the last segment - shouldn't happen with valid tRPC
+      return {
+        definition: this.createDefinitionFromDeclaration(declaration, segment),
+      };
     }
   }
 
@@ -168,6 +193,7 @@ export class Navigator {
 
     // If not found locally, check imports
     if (!result) {
+      this.logger.debug(`${name} not found locally, checking imports`);
       result = this.findImportedDeclaration(name, sourceFile);
     }
 
@@ -198,9 +224,13 @@ export class Navigator {
 
     visit(sourceFile);
 
-    if (!foundImportPath) return null;
+    if (!foundImportPath) {
+      this.logger.debug(`No import found for ${name}`);
+      return null;
+    }
 
     const importPath = foundImportPath;
+    this.logger.debug(`Found import for ${name}: ${importPath}`);
 
     // Resolve the import path
     const currentDir = path.dirname(sourceFile.fileName);
@@ -254,10 +284,13 @@ export class Navigator {
   private findRouterCall(node: ts.Node): ts.CallExpression | null {
     if (ts.isCallExpression(node)) {
       const expr = node.expression;
-      if (
-        (ts.isIdentifier(expr) && expr.text === 'router') ||
-        (ts.isPropertyAccessExpression(expr) && expr.name.text === 'router')
-      ) {
+      // Support various router creation patterns
+      if (ts.isIdentifier(expr)) {
+        const text = expr.text.toLowerCase();
+        if (text.includes('router') || text.includes('trpc')) {
+          return node;
+        }
+      } else if (ts.isPropertyAccessExpression(expr) && expr.name.text === 'router') {
         return node;
       }
     }
@@ -277,12 +310,58 @@ export class Navigator {
       return false;
     }
 
+    // First check if it's a router - routers take precedence
+    if (this.isRouterDeclaration(decl.initializer)) {
+      return false;
+    }
+
+    // Now check if it's a procedure
     const text = decl.initializer.getText();
     return (
       text.includes('Procedure') &&
-      (text.includes('.query') || text.includes('.mutation') || text.includes('.subscription')) &&
-      !text.includes('router(')
+      (text.includes('.query') || text.includes('.mutation') || text.includes('.subscription'))
     );
+  }
+  
+  private isRouterDeclaration(node: ts.Node): boolean {
+    // Check for router() call pattern
+    const text = node.getText();
+    if (text.includes('router(')) {
+      return true;
+    }
+    
+    // Check for object router pattern
+    return this.isObjectRouter(node);
+  }
+  
+  private isObjectRouter(node: ts.Node): boolean {
+    // Check if it's an object literal (with or without satisfies) that contains procedure definitions
+    let objLiteral: ts.ObjectLiteralExpression | null = null;
+    
+    if (ts.isObjectLiteralExpression(node)) {
+      objLiteral = node;
+    } else if (ts.isSatisfiesExpression(node) && ts.isObjectLiteralExpression(node.expression)) {
+      objLiteral = node.expression;
+    }
+    
+    if (!objLiteral) return false;
+    
+    // Check if any properties are procedures or router references
+    for (const prop of objLiteral.properties) {
+      if (ts.isPropertyAssignment(prop) && prop.initializer) {
+        const propText = prop.initializer.getText();
+        // It's a procedure
+        if (propText.includes('.query') || propText.includes('.mutation') || propText.includes('.subscription')) {
+          return true;
+        }
+        // It's likely a reference to another router (identifier that could be a router)
+        if (ts.isIdentifier(prop.initializer)) {
+          return true;
+        }
+      }
+    }
+    
+    return false;
   }
 
   private isProcedureCall(node: ts.Node): boolean {
