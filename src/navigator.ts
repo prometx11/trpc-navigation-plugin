@@ -81,8 +81,10 @@ export class Navigator {
       routesObject = declaration.initializer;
     }
     // Check for satisfies expression with object literal
-    else if (ts.isSatisfiesExpression(declaration.initializer) && 
-             ts.isObjectLiteralExpression(declaration.initializer.expression)) {
+    else if (
+      ts.isSatisfiesExpression(declaration.initializer) &&
+      ts.isObjectLiteralExpression(declaration.initializer.expression)
+    ) {
       routesObject = declaration.initializer.expression;
     }
 
@@ -124,7 +126,9 @@ export class Navigator {
 
     const isProcedure = this.isProcedureDeclaration(declaration);
     const isRouter = this.isRouterDeclaration(declaration.initializer!);
-    this.logger.debug(`Found ${identifier.text}: isProcedure=${isProcedure}, isRouter=${isRouter}, isLastSegment=${isLastSegment}`);
+    this.logger.debug(
+      `Found ${identifier.text}: isProcedure=${isProcedure}, isRouter=${isRouter}, isLastSegment=${isLastSegment}`,
+    );
 
     if (isProcedure && isLastSegment) {
       // This is a procedure and we're at the end of the path
@@ -322,30 +326,30 @@ export class Navigator {
       (text.includes('.query') || text.includes('.mutation') || text.includes('.subscription'))
     );
   }
-  
+
   private isRouterDeclaration(node: ts.Node): boolean {
     // Check for router() call pattern
     const text = node.getText();
     if (text.includes('router(')) {
       return true;
     }
-    
+
     // Check for object router pattern
     return this.isObjectRouter(node);
   }
-  
+
   private isObjectRouter(node: ts.Node): boolean {
     // Check if it's an object literal (with or without satisfies) that contains procedure definitions
     let objLiteral: ts.ObjectLiteralExpression | null = null;
-    
+
     if (ts.isObjectLiteralExpression(node)) {
       objLiteral = node;
     } else if (ts.isSatisfiesExpression(node) && ts.isObjectLiteralExpression(node.expression)) {
       objLiteral = node.expression;
     }
-    
+
     if (!objLiteral) return false;
-    
+
     // Check if any properties are procedures or router references
     for (const prop of objLiteral.properties) {
       if (ts.isPropertyAssignment(prop) && prop.initializer) {
@@ -360,7 +364,7 @@ export class Navigator {
         }
       }
     }
-    
+
     return false;
   }
 

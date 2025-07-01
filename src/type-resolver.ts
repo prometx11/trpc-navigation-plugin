@@ -1,6 +1,6 @@
-import * as path from "node:path";
-import * as ts from "typescript/lib/tsserverlibrary";
-import type { Logger, PluginConfig } from "./types";
+import * as path from 'node:path';
+import * as ts from 'typescript/lib/tsserverlibrary';
+import type { Logger, PluginConfig } from './types';
 
 export interface RouterTypeInfo {
   routerSymbol: ts.Symbol;
@@ -19,8 +19,8 @@ export class TypeResolver {
    */
   extractRouterType(
     variableName: string,
-    sourceFile: ts.SourceFile,
-    position: number,
+    _sourceFile: ts.SourceFile,
+    _position: number,
     typeChecker: ts.TypeChecker,
     program: ts.Program,
   ): RouterTypeInfo | null {
@@ -29,16 +29,15 @@ export class TypeResolver {
     try {
       // Use configured router location
       if (!this.config.router) {
-        this.logger.error("No router configuration provided");
+        this.logger.error('No router configuration provided');
         return null;
       }
-
 
       // Resolve the router file path
       // In monorepos, we need to find where the tsconfig.json is located
       const configFile = program.getCompilerOptions().configFilePath as string | undefined;
       const configDir = configFile ? path.dirname(configFile) : program.getCurrentDirectory();
-      
+
       const routerPath = path.isAbsolute(this.config.router.filePath)
         ? this.config.router.filePath
         : path.resolve(configDir, this.config.router.filePath);
@@ -48,7 +47,7 @@ export class TypeResolver {
 
       // Get the router source file
       let routerSourceFile = program.getSourceFile(routerPath);
-      
+
       // If not in program, try to read and parse it directly
       if (!routerSourceFile) {
         // Check if file exists
@@ -56,48 +55,32 @@ export class TypeResolver {
           this.logger.error(`Router file does not exist: ${routerPath}`);
           return null;
         }
-        
+
         // Read and parse the file
         const fileContent = this.serverHost.readFile(routerPath);
         if (!fileContent) {
           this.logger.error(`Could not read router file: ${routerPath}`);
           return null;
         }
-        
-        routerSourceFile = ts.createSourceFile(
-          routerPath,
-          fileContent,
-          ts.ScriptTarget.Latest,
-          true
-        );
+
+        routerSourceFile = ts.createSourceFile(routerPath, fileContent, ts.ScriptTarget.Latest, true);
       }
 
       // Find the router variable in the file
-      const routerSymbol = this.findRouterVariable(
-        routerSourceFile,
-        this.config.router.variableName,
-        typeChecker,
-      );
+      const routerSymbol = this.findRouterVariable(routerSourceFile, this.config.router.variableName, typeChecker);
 
       if (!routerSymbol) {
-        this.logger.error(
-          `Could not find router variable '${this.config.router.variableName}' in ${routerPath}`,
-        );
+        this.logger.error(`Could not find router variable '${this.config.router.variableName}' in ${routerPath}`);
         return null;
       }
 
-      this.logger.info(
-        `✅ Found router ${this.config.router.variableName} in ${routerPath}`,
-      );
+      this.logger.info(`✅ Found router ${this.config.router.variableName} in ${routerPath}`);
       return {
         routerSymbol,
         routerFile: routerPath,
       };
     } catch (error) {
-      this.logger.error(
-        `Error extracting router type for ${variableName}`,
-        error,
-      );
+      this.logger.error(`Error extracting router type for ${variableName}`, error);
       return null;
     }
   }
@@ -126,26 +109,15 @@ export class TypeResolver {
       }
 
       // Look for export declarations
-      if (
-        ts.isExportAssignment(node) &&
-        !node.isExportEquals &&
-        node.expression
-      ) {
-        if (
-          ts.isIdentifier(node.expression) &&
-          node.expression.text === variableName
-        ) {
+      if (ts.isExportAssignment(node) && !node.isExportEquals && node.expression) {
+        if (ts.isIdentifier(node.expression) && node.expression.text === variableName) {
           routerNode = node;
           return;
         }
       }
 
       // Look for named exports
-      if (
-        ts.isExportDeclaration(node) &&
-        node.exportClause &&
-        ts.isNamedExports(node.exportClause)
-      ) {
+      if (ts.isExportDeclaration(node) && node.exportClause && ts.isNamedExports(node.exportClause)) {
         for (const element of node.exportClause.elements) {
           const exportedName = element.name?.text || element.propertyName?.text;
           if (exportedName === variableName) {
@@ -159,7 +131,7 @@ export class TypeResolver {
     };
 
     visit(sourceFile);
-    
+
     if (!routerNode) {
       return null;
     }
@@ -191,11 +163,7 @@ export class TypeResolver {
   ): boolean {
     this.logger.debug(`🔎 Checking if ${variableName} is a tRPC client`);
 
-    const identifier = this.findIdentifierAtPosition(
-      sourceFile,
-      variableName,
-      position,
-    );
+    const identifier = this.findIdentifierAtPosition(sourceFile, variableName, position);
     if (!identifier) {
       this.logger.debug(`❌ No identifier found`);
       return false;
@@ -208,10 +176,7 @@ export class TypeResolver {
     }
 
     // Check if it's an alias (imported)
-    const resolvedSymbol =
-      symbol.flags & ts.SymbolFlags.Alias
-        ? typeChecker.getAliasedSymbol(symbol)
-        : symbol;
+    const resolvedSymbol = symbol.flags & ts.SymbolFlags.Alias ? typeChecker.getAliasedSymbol(symbol) : symbol;
 
     // Check the initializer text
     const initializer = this.findInitializer(resolvedSymbol);
@@ -220,14 +185,12 @@ export class TypeResolver {
       this.logger.debug(`📄 Initializer: ${text.substring(0, 100)}...`);
 
       if (
-        text.includes("createTRPC") ||
-        text.includes("initTRPC") ||
-        text.includes("useUtils") ||
-        text.includes("useContext")
+        text.includes('createTRPC') ||
+        text.includes('initTRPC') ||
+        text.includes('useUtils') ||
+        text.includes('useContext')
       ) {
-        this.logger.info(
-          `✅ Found tRPC client by initializer: ${variableName}`,
-        );
+        this.logger.info(`✅ Found tRPC client by initializer: ${variableName}`);
         return true;
       }
     }
@@ -238,11 +201,11 @@ export class TypeResolver {
     this.logger.debug(`📊 Type: ${typeName.substring(0, 200)}...`);
 
     const isTrpc =
-      typeName.includes("TRPC") ||
-      typeName.includes("CreateTRPC") ||
-      typeName.includes("TRPCClient") ||
-      typeName.includes("Proxy<DecoratedProcedureRecord") ||
-      typeName.includes("AnyRouter");
+      typeName.includes('TRPC') ||
+      typeName.includes('CreateTRPC') ||
+      typeName.includes('TRPCClient') ||
+      typeName.includes('Proxy<DecoratedProcedureRecord') ||
+      typeName.includes('AnyRouter');
 
     if (isTrpc) {
       this.logger.info(`✅ Found tRPC client by type: ${variableName}`);
@@ -261,10 +224,7 @@ export class TypeResolver {
     function visit(node: ts.Node) {
       if (ts.isIdentifier(node) && node.text === variableName) {
         // If no result yet, or this identifier is closer to the position
-        if (
-          !result ||
-          (position >= node.getStart() && position <= node.getEnd())
-        ) {
+        if (!result || (position >= node.getStart() && position <= node.getEnd())) {
           result = node;
         }
       }
