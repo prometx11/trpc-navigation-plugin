@@ -2,6 +2,8 @@
 
 A TypeScript Language Service Plugin that fixes broken "go to definition" navigation for tRPC procedures when using TypeScript's declaration emit.
 
+🚀 **[View Demo Repository](https://github.com/ebg1223/trpc-plugin-demo)** - See the plugin in action with a T3 Turbo monorepo
+
 ## Problem
 
 When using tRPC with TypeScript's declaration emit (`declaration: true`), there's a TypeScript bug that completely breaks "go to definition" functionality. When you try to Cmd+Click on a tRPC procedure call like `api.users.getUser.useQuery()`, TypeScript only takes you to the root router definition - it can't navigate any deeper into nested routers or the actual procedure implementations.
@@ -35,6 +37,20 @@ You DON'T need this plugin if:
 
 ## Installation
 
+> ⚠️ **IMPORTANT: VS Code & Editor Setup**
+> 
+> **You MUST use the workspace TypeScript version, not the built-in version!**
+> 
+> In VS Code, Cursor, or other VS Code-based editors:
+> 1. Open any TypeScript file in your project
+> 2. Click the TypeScript version number or `{}` in the bottom status bar
+> 3. Select "Select TypeScript Version..."
+> 4. Choose "Use Workspace Version" (NOT "Use VS Code's Version")
+> 
+> Without this step, the plugin will not be detected or loaded!
+
+### Setup Steps
+
 1. Install the plugin:
    ```bash
    npm install --save-dev trpc-navigation-plugin
@@ -61,7 +77,7 @@ You DON'T need this plugin if:
    }
    ```
 
-3. Make sure you're using the workspace TypeScript version in VS Code (not the built-in version)
+3. **Switch to workspace TypeScript** (see important note above)
 4. Restart the TypeScript server: `Cmd+Shift+P` → "TypeScript: Restart TS Server"
 
 ## Configuration
@@ -225,13 +241,15 @@ apiCtx.users.getUser.invalidate();  // ✓ Works
 
 If navigation isn't working:
 
-1. **Check Configuration**: Ensure your router config points to the correct file and variable name
-2. **Verify Router Export**: Make sure your router is exported or declared in the specified file
-3. **Check TS Server Logs**: Look for `[TRPC-Nav]` entries in the TypeScript Server logs
-4. **Enable Verbose Logging**: Add `"verbose": true` to see detailed debug information
-5. **Restart TS Server**: After configuration changes: `Cmd+Shift+P` → "TypeScript: Restart TS Server"
+1. **Verify TypeScript Version**: Make sure you're using the workspace TypeScript version! (See installation section)
+2. **Check Configuration**: Ensure your router config points to the correct file and variable name
+3. **Verify Router Export**: Make sure your router is exported or declared in the specified file
+4. **Check TS Server Logs**: Look for `[TRPC-Nav]` entries in the TypeScript Server logs
+5. **Enable Verbose Logging**: Add `"verbose": true` to see detailed debug information
+6. **Restart TS Server**: After configuration changes: `Cmd+Shift+P` → "TypeScript: Restart TS Server"
 
 Common issues:
+- **Plugin not loading**: You're using VS Code's built-in TypeScript instead of workspace version
 - Wrong file path: Paths are resolved from the project root (where tsconfig.json is)
 - Wrong variable name: The variable name must match exactly (case-sensitive)
 - Router not found: Make sure the router is a top-level export or variable declaration
