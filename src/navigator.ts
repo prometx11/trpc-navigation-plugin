@@ -1,11 +1,13 @@
 import * as path from 'node:path';
 import * as ts from 'typescript/lib/tsserverlibrary';
+import type { PluginConfigWithDefaults } from './config';
 import type { Logger } from './types';
 
 export class Navigator {
   constructor(
     private logger: Logger,
     private serverHost: ts.server.ServerHost,
+    private config: PluginConfigWithDefaults,
   ) {}
 
   /**
@@ -244,7 +246,11 @@ export class Navigator {
       resolvedPath = path.resolve(currentDir, importPath);
 
       // Try different extensions
-      const extensions = ['', '.ts', '.tsx', '/index.ts', '/index.tsx'];
+      const extensions = [
+        '',
+        ...this.config.fileExtensions,
+        ...this.config.fileExtensions.map((ext) => `/index${ext}`),
+      ];
       for (const ext of extensions) {
         const fullPath = resolvedPath + ext;
         if (this.serverHost.fileExists(fullPath)) {
@@ -290,8 +296,16 @@ export class Navigator {
       const expr = node.expression;
       // Support various router creation patterns
       if (ts.isIdentifier(expr)) {
-        const text = expr.text.toLowerCase();
-        if (text.includes('router') || text.includes('trpc')) {
+        const text = expr.text;
+        if (
+          this.config.patterns.routerFunctions.some((func) => {
+            // Exact match or common variations
+            return text === func || 
+                   text.toLowerCase() === func.toLowerCase() ||
+                   // Handle property access patterns like t.router
+                   (func.includes('.') && text.endsWith(func));
+          })
+        ) {
           return node;
         }
       } else if (ts.isPropertyAccessExpression(expr) && expr.name.text === 'router') {
@@ -321,10 +335,9 @@ export class Navigator {
 
     // Now check if it's a procedure
     const text = decl.initializer.getText();
-    return (
-      text.includes('Procedure') &&
-      (text.includes('.query') || text.includes('.mutation') || text.includes('.subscription'))
-    );
+    const hasProcedure = text.includes('Procedure');
+    const hasProcedureType = this.config.patterns.procedureTypes.some((type) => text.includes(`.${type}`));
+    return hasProcedure && hasProcedureType;
   }
 
   private isRouterDeclaration(node: ts.Node): boolean {
@@ -355,7 +368,7 @@ export class Navigator {
       if (ts.isPropertyAssignment(prop) && prop.initializer) {
         const propText = prop.initializer.getText();
         // It's a procedure
-        if (propText.includes('.query') || propText.includes('.mutation') || propText.includes('.subscription')) {
+        if (this.config.patterns.procedureTypes.some((type) => propText.includes(`.${type}`))) {
           return true;
         }
         // It's likely a reference to another router (identifier that could be a router)
@@ -370,11 +383,10 @@ export class Navigator {
 
   private isProcedureCall(node: ts.Node): boolean {
     const text = node.getText();
-    return (
-      text.includes('Procedure') &&
-      (text.includes('.query') || text.includes('.mutation') || text.includes('.subscription')) &&
-      !text.includes('router(')
-    );
+    const hasProcedure = text.includes('Procedure');
+    const hasProcedureType = this.config.patterns.procedureTypes.some((type) => text.includes(`.${type}`));
+    const isNotRouter = !text.includes('router(');
+    return hasProcedure && hasProcedureType && isNotRouter;
   }
 
   private createDefinitionFromDeclaration(declaration: ts.Declaration, name: string): ts.DefinitionInfo {

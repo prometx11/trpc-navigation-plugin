@@ -1,4 +1,5 @@
 import * as ts from 'typescript/lib/tsserverlibrary';
+import { getConfigWithDefaults, type PluginConfigWithDefaults } from './config';
 import { createLogger } from './logger';
 import { createNavigationResult, detectTrpcApiCall, findWordAtPosition, parseNavigationPath } from './navigation-utils';
 import { Navigator } from './navigator';
@@ -8,11 +9,7 @@ import type { PluginConfig } from './types';
 function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
   // Read configuration
   const config: Partial<PluginConfig> = info.config || {};
-  const pluginConfig: PluginConfig = {
-    verbose: config.verbose || false,
-    router: config.router,
-    nestedRouters: config.nestedRouters,
-  };
+  const pluginConfig = getConfigWithDefaults(config);
 
   const logger = createLogger(info, pluginConfig.verbose);
   logger.info('TRPC Navigation Plugin initialized');
@@ -38,8 +35,8 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
     return info.languageService;
   }
 
-  const typeResolver = new TypeResolver(logger, info.serverHost, pluginConfig);
-  const navigator = new Navigator(logger, info.serverHost);
+  const typeResolver = new TypeResolver(logger, info.serverHost, pluginConfig as PluginConfigWithDefaults);
+  const navigator = new Navigator(logger, info.serverHost, pluginConfig as PluginConfigWithDefaults);
 
   // Proxy the language service
   const proxy: ts.LanguageService = Object.create(null);
@@ -85,7 +82,7 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
           if (ts.isIdentifier(decl.name) && decl.initializer) {
             if (ts.isCallExpression(decl.initializer)) {
               const expr = decl.initializer.expression;
-              if (ts.isPropertyAccessExpression(expr) && expr.name.text === 'useUtils') {
+              if (ts.isPropertyAccessExpression(expr) && expr.name.text === pluginConfig.patterns.utilsMethod) {
                 utilsVariables.add(decl.name.text);
                 logger.info(`Found useUtils variable: ${decl.name.text}`);
               }
@@ -103,8 +100,9 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
   // Override getDefinitionAndBoundSpan for navigation
   proxy.getDefinitionAndBoundSpan = (fileName: string, position: number): ts.DefinitionInfoAndBoundSpan | undefined => {
     try {
-      // Skip non-TS files
-      if (!fileName.match(/\.(ts|tsx|js|jsx)$/)) {
+      // Skip non-supported files
+      const extensionPattern = pluginConfig.fileExtensions.map((ext) => ext.replace('.', '\\.')).join('|');
+      if (!fileName.match(new RegExp(`(${extensionPattern})$`))) {
         return info.languageService.getDefinitionAndBoundSpan(fileName, position);
       }
 
@@ -168,7 +166,7 @@ function create(info: ts.server.PluginCreateInfo): ts.LanguageService {
           // Check if it's variableName.useUtils()
           if (
             ts.isPropertyAccessExpression(expr) &&
-            expr.name.text === 'useUtils' &&
+            expr.name.text === pluginConfig.patterns.utilsMethod &&
             ts.isIdentifier(expr.expression)
           ) {
             targetVariable = expr.expression.text;

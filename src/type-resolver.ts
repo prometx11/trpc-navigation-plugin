@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import * as ts from 'typescript/lib/tsserverlibrary';
-import type { Logger, PluginConfig } from './types';
+import type { PluginConfigWithDefaults } from './config';
+import type { Logger } from './types';
 
 export interface RouterTypeInfo {
   routerSymbol: ts.Symbol;
@@ -11,7 +12,7 @@ export class TypeResolver {
   constructor(
     private logger: Logger,
     private serverHost: ts.server.ServerHost,
-    private config: PluginConfig,
+    private config: PluginConfigWithDefaults,
   ) {}
 
   /**
@@ -184,12 +185,11 @@ export class TypeResolver {
       const text = initializer.getText();
       this.logger.debug(`📄 Initializer: ${text.substring(0, 100)}...`);
 
-      if (
-        text.includes('createTRPC') ||
-        text.includes('initTRPC') ||
-        text.includes('useUtils') ||
-        text.includes('useContext')
-      ) {
+      const hasClientInitializer = this.config.patterns.clientInitializers.some((pattern) => text.includes(pattern));
+      const hasUtilsMethod = text.includes(this.config.patterns.utilsMethod);
+      const hasContext = text.includes('useContext');
+
+      if (hasClientInitializer || hasUtilsMethod || hasContext) {
         this.logger.info(`✅ Found tRPC client by initializer: ${variableName}`);
         return true;
       }

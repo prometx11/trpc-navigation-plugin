@@ -35,6 +35,36 @@ export interface PluginConfig {
    * Optional nested routers configuration
    */
   nestedRouters?: Record<string, RouterConfig>;
+  /**
+   * Pattern configuration for tRPC detection
+   */
+  patterns?: {
+    /**
+     * Procedure types to detect
+     * @default ['query', 'mutation', 'subscription']
+     */
+    procedureTypes?: string[];
+    /**
+     * Router function names to detect
+     * @default ['router', 'createTRPCRouter', 'createRouter', 't.router']
+     */
+    routerFunctions?: string[];
+    /**
+     * Client initializer patterns to detect
+     * @default ['createTRPC', 'initTRPC', 'createTRPCClient']
+     */
+    clientInitializers?: string[];
+    /**
+     * Name of the utils method
+     * @default 'useUtils'
+     */
+    utilsMethod?: string;
+  };
+  /**
+   * File extensions to process
+   * @default ['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts', '.mjs', '.cjs']
+   */
+  fileExtensions?: string[];
 }
 
 export interface Logger {

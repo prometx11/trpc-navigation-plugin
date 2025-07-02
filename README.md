@@ -93,6 +93,16 @@ The plugin requires you to specify where your tRPC router is defined:
 - `router.variableName` (required): Name of your router variable in that file
   - Example: `"appRouter"`, `"router"`, `"mainRouter"`
 
+- `patterns` (optional): Customize pattern detection
+  - `procedureTypes`: Procedure types to detect (default: `['query', 'mutation', 'subscription']`)
+  - `routerFunctions`: Router function names (default: `['router', 'createTRPCRouter', 'createRouter', 't.router']`)
+  - `clientInitializers`: Client initialization patterns (default: `['createTRPC', 'initTRPC', 'createTRPCClient']`)
+  - `utilsMethod`: Name of the utils method (default: `'useUtils'`)
+
+- `fileExtensions` (optional): File extensions to process
+  - Default: `['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts', '.mjs', '.cjs']`
+  - Add custom extensions if needed
+
 ### Monorepo Setup
 
 In monorepos, add the plugin to each package that uses tRPC:
@@ -144,6 +154,33 @@ For debugging, you can enable verbose logging:
           "variableName": "appRouter"
         },
         "verbose": true  // Enable detailed logging
+      }
+    ]
+  }
+}
+```
+
+### Advanced Configuration
+
+Customize detection patterns for non-standard tRPC setups:
+
+```json
+{
+  "compilerOptions": {
+    "plugins": [
+      {
+        "name": "trpc-navigation-plugin",
+        "router": {
+          "filePath": "./src/server/api/root.ts",
+          "variableName": "appRouter"
+        },
+        "patterns": {
+          "procedureTypes": ["query", "mutation", "subscription", "action"],
+          "routerFunctions": ["router", "createTRPCRouter", "myCustomRouter"],
+          "clientInitializers": ["createTRPC", "initTRPC", "setupTRPC"],
+          "utilsMethod": "useUtils"  // or "useContext" for older tRPC versions
+        },
+        "fileExtensions": [".ts", ".tsx", ".mts", ".cts"]
       }
     ]
   }
