@@ -10,59 +10,67 @@ export interface NavigationTarget {
   procedureName?: string;
 }
 
-export interface ProcedureMapping {
-  [apiPath: string]: NavigationTarget;
+export interface RouterConfig {
+  /**
+   * Path to the file containing the router definition
+   */
+  filePath: string;
+  /**
+   * Name of the exported router variable
+   */
+  variableName: string;
 }
 
 export interface PluginConfig {
-  /**
-   * Root directory where TRPC routers are located.
-   * If not specified, the plugin will try common locations.
-   * @example "./src/router" or "../api/src/router"
-   */
-  routerRoot?: string;
-
-  /**
-   * Name of the main router export
-   * @default "appRouter"
-   */
-  mainRouterName?: string;
-
-  /**
-   * Variable name used for the TRPC client
-   * @default "api"
-   */
-  apiVariableName?: string;
-
-  /**
-   * Pattern to identify procedure exports. If not specified, procedures are detected by structure.
-   * @example "procedure_" to match exports like "procedure_getSomething"
-   */
-  procedurePattern?: string;
-
-  /**
-   * Cache timeout in milliseconds
-   * @default 30000 (30 seconds)
-   */
-  cacheTimeout?: number;
-
-  /**
-   * Maximum depth for recursive router analysis
-   * @default 10
-   */
-  maxDepth?: number;
-
   /**
    * Enable verbose logging
    * @default false
    */
   verbose?: boolean;
+  /**
+   * Router configuration - required for navigation
+   */
+  router?: RouterConfig;
+  /**
+   * Optional nested routers configuration
+   */
+  nestedRouters?: Record<string, RouterConfig>;
+  /**
+   * Pattern configuration for tRPC detection
+   */
+  patterns?: {
+    /**
+     * Procedure types to detect
+     * @default ['query', 'mutation', 'subscription']
+     */
+    procedureTypes?: string[];
+    /**
+     * Router function names to detect
+     * @default ['router', 'createTRPCRouter', 'createRouter', 't.router']
+     */
+    routerFunctions?: string[];
+    /**
+     * Client initializer patterns to detect
+     * @default ['createTRPC', 'initTRPC', 'createTRPCClient']
+     */
+    clientInitializers?: string[];
+    /**
+     * Name of the utils method
+     * @default 'useUtils'
+     */
+    utilsMethod?: string;
+  };
+  /**
+   * File extensions to process
+   * @default ['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts', '.mjs', '.cjs']
+   */
+  fileExtensions?: string[];
 }
 
 export interface Logger {
-  info(message: string): void;
-  error(message: string, error?: unknown): void;
-  debug(message: string): void;
+  info(message: string, context?: unknown): void;
+  error(message: string, errorOrContext?: unknown): void;
+  debug(message: string, context?: unknown): void;
 }
 
 export interface TrpcNavigationPlugin {
