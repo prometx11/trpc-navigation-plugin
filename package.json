@@ -1,6 +1,6 @@
 {
-  "name": "trpc-navigation-plugin",
-  "version": "0.1.2",
+  "name": "@prometx/trpc-navigation-plugin",
+  "version": "0.2.0",
   "description": "TypeScript Language Service Plugin that fixes broken 'go to definition' for tRPC when using declaration emit",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -37,12 +37,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ebg1223/trpc-navigation-plugin"
+    "url": "https://github.com/prometx11/trpc-navigation-plugin"
   },
   "bugs": {
-    "url": "https://github.com/ebg1223/trpc-navigation-plugin/issues"
+    "url": "https://github.com/prometx11/trpc-navigation-plugin/issues"
   },
-  "homepage": "https://github.com/ebg1223/trpc-navigation-plugin#readme",
+  "homepage": "https://github.com/prometx11/trpc-navigation-plugin#readme",
   "dependencies": {
     "ts-morph": "^23.0.0"
   },
